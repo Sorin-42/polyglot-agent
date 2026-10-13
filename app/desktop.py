@@ -2,9 +2,15 @@
 
 - no console window (run with pythonw / as a windowed exe); logs go to data/app.log
 - one instance at a time; launching again just brings the window to the front
-- the UI opens in its own app window (Edge or Chrome "--app" mode with a private
-  profile). Closing that window quits the app. Without Edge/Chrome it falls back
-  to the default browser and quits after the tab has been closed for a while.
+- the UI opens in a window chosen in Settings (window_mode, applied at launch):
+  app     built-in window on WebView2, the Chromium engine that ships with
+          Windows 10/11 (no browser needed). Falls back to Edge/Chrome if the
+          WebView2 runtime or pywebview is missing.
+  edge /  that browser's chromeless "--app" window with a private profile.
+  chrome
+  browser a tab in the default browser (e.g. Firefox); quits after the tab has
+          been closed for a while.
+  Closing the app window quits the app.
 """
 from __future__ import annotations
 
@@ -139,12 +145,20 @@ def _focus_existing() -> None:
         pass
 
 
-def find_app_browser() -> Optional[str]:
-    """Edge (always present on Windows 10/11) or Chrome, for a chromeless app window."""
+_BROWSERS = {  # name -> (exe, path under Program Files / LocalAppData)
+    "edge": ("msedge.exe", r"Microsoft\Edge\Application\msedge.exe"),
+    "chrome": ("chrome.exe", r"Google\Chrome\Application\chrome.exe"),
+}
+
+
+def find_app_browser(prefer: str = "edge") -> Optional[str]:
+    """Edge or Chrome for a chromeless app window; `prefer` is tried first."""
     if sys.platform != "win32":
         return None
-    rel = [r"Microsoft\Edge\Application\msedge.exe", r"Google\Chrome\Application\chrome.exe"]
-    for exe in ("msedge.exe", "chrome.exe"):
+    for name in [prefer] + [b for b in _BROWSERS if b != prefer]:
+        if name not in _BROWSERS:
+            continue
+        exe, rel = _BROWSERS[name]
         try:
             import winreg
             key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
@@ -154,19 +168,20 @@ def find_app_browser() -> Optional[str]:
                 return path
         except OSError:
             pass
-    for env in ("PROGRAMFILES(X86)", "PROGRAMFILES", "LOCALAPPDATA"):
-        base = os.environ.get(env)
-        for r in rel:
-            if base and (Path(base) / r).is_file():
-                return str(Path(base) / r)
+        for env in ("PROGRAMFILES(X86)", "PROGRAMFILES", "LOCALAPPDATA"):
+            base = os.environ.get(env)
+            if base and (Path(base) / rel).is_file():
+                return str(Path(base) / rel)
     return None
 
 
-def _open_app_window(url: str) -> Optional[subprocess.Popen]:
-    exe = find_app_browser()
+def _open_app_window(url: str, prefer: str = "edge") -> Optional[subprocess.Popen]:
+    exe = find_app_browser(prefer)
     if not exe:
         return None
-    profile = config.DATA_DIR / "window-profile"
+    # one private profile per browser: Edge and Chrome profiles are not interchangeable
+    profile = config.DATA_DIR / ("window-profile-chrome" if exe.lower().endswith("chrome.exe")
+                                 else "window-profile")
     args = [exe, f"--app={url}", f"--user-data-dir={profile}", "--no-first-run",
             "--no-default-browser-check", "--disable-background-mode", "--window-size=1320,880"]
     try:
@@ -175,13 +190,18 @@ def _open_app_window(url: str) -> Optional[subprocess.Popen]:
         return None
 
 
-def _watch(srv, url: str, force_browser: bool) -> None:
-    from . import server
+def _wait_started(srv) -> None:
     for _ in range(300):  # wait for the server to accept connections
         if getattr(srv, "started", False):
-            break
+            return
         time.sleep(0.05)
-    proc = None if force_browser else _open_app_window(url)
+
+
+def _watch(srv, url: str, mode: str) -> None:
+    """Browser-based modes: open the window/tab, quit when it is closed."""
+    from . import server
+    _wait_started(srv)
+    proc = None if mode == "browser" else _open_app_window(url, mode)
     if proc is not None:
         t0 = time.time()
         proc.wait()
@@ -199,6 +219,55 @@ def _watch(srv, url: str, force_browser: bool) -> None:
             idle_since = time.time()
         elif time.time() - idle_since > IDLE_EXIT_SECONDS:
             _request_exit(srv)
+
+
+APP_ICON = Path(__file__).resolve().parent / "static" / "icons" / "app.ico"
+
+
+def webview2_ready() -> bool:
+    """pywebview is installed and will use WebView2. Without the WebView2 runtime,
+    pywebview would silently use the old Internet Explorer engine, which cannot
+    run this UI."""
+    if sys.platform != "win32":
+        return False
+    try:
+        from webview.platforms import winforms
+    except Exception as e:  # noqa: BLE001 - ImportError, pythonnet/.NET problems
+        print(f"Built-in window unavailable ({type(e).__name__}: {e}).", flush=True)
+        return False
+    if getattr(winforms, "renderer", "") != "edgechromium":
+        print("Built-in window unavailable: the WebView2 runtime is not installed.", flush=True)
+        return False
+    return True
+
+
+def _app_window(srv, url: str) -> None:
+    """Built-in app window on WebView2; blocks (on the main thread) until it is closed."""
+    import webview
+
+    from . import server
+    if sys.platform == "win32":
+        try:  # own taskbar button and icon instead of being grouped under pythonw.exe
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("PolyglotAgent.App")
+        except Exception:  # noqa: BLE001
+            pass
+    _wait_started(srv)
+    window = webview.create_window(config.APP_NAME, url, width=1320, height=880, min_size=(720, 480))
+
+    def quit_app() -> None:   # Settings > Quit: stop the server and close the window
+        _request_exit(srv)
+        window.destroy()
+    server.state.shutdown = quit_app
+    webview.start(gui="edgechromium", private_mode=False, storage_path=str(config.DATA_DIR / "webview"),
+                  icon=str(APP_ICON) if APP_ICON.is_file() else None)
+
+
+def _run_server(srv) -> None:
+    try:
+        srv.run()
+    except BaseException:  # noqa: BLE001 - log it; the process ends either way
+        traceback.print_exc()
 
 
 def main() -> None:
@@ -229,12 +298,26 @@ def main() -> None:
     running = config.DATA_DIR / "running.json"
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
     running.write_text(json.dumps({"url": url, "pid": os.getpid()}), encoding="utf-8")
-    print(f"{config.APP_NAME} at {url}", flush=True)
-    threading.Thread(target=_watch, args=(srv, url, args.browser), daemon=True).start()
+    mode = "browser" if args.browser else server.state.settings.window_mode
+    print(f"{config.APP_NAME} at {url} (window: {mode})", flush=True)
     try:
-        srv.run()
-    except BaseException:  # noqa: BLE001 - log it; the process ends below either way
-        traceback.print_exc()
+        if mode == "app" and webview2_ready():
+            # The window needs the main thread, so the server runs beside it.
+            server_thread = threading.Thread(target=_run_server, args=(srv,), daemon=True)
+            server_thread.start()
+            try:
+                _app_window(srv, url)
+            except Exception:  # noqa: BLE001
+                traceback.print_exc()
+                print("Built-in window failed; opening an Edge/Chrome window instead.", flush=True)
+                _watch(srv, url, "edge")
+            _request_exit(srv)
+            server_thread.join(SHUTDOWN_GRACE_SECONDS + 5)
+        else:
+            if mode == "app":
+                mode = "edge"
+            threading.Thread(target=_watch, args=(srv, url, mode), daemon=True).start()
+            _run_server(srv)
     finally:
         print(f"{config.APP_NAME} stopped.", flush=True)
         _hard_exit()

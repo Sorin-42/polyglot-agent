@@ -28,6 +28,7 @@ def test_token_and_origin_checks():
                                  headers={"origin": "http://127.0.0.1:8765"}) as ws:
             hello = ws.receive_json()
             assert hello["type"] == "hello" and "languages" in hello["meta"]
+            assert hello["meta"]["window_modes"] == ["app", "edge", "chrome", "browser"]
 
 
 def test_settings_and_memory_api():

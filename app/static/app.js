@@ -52,6 +52,9 @@ const STR = {
     costNote: "Input = new tokens (incl. cache writes); Cached = cache reads (~10% price). Cost is an estimate.",
     turnLabel: "This request",
     quitApp: "Quit app", quitting: "Polyglot Agent has quit. You can close this window.",
+    windowLegend: "Window", windowMode: "Open the app in", windowNote: "Applies the next time you start the app.",
+    win_app: "Built-in window (WebView2, recommended)", win_edge: "Microsoft Edge window",
+    win_chrome: "Google Chrome window", win_browser: "Default browser tab (e.g. Firefox)",
     shareLabel: "Screen sharing", shareWindow: "Active app", shareScreen: "Full screen",
     shareHint: "What the agent's screenshots include. The taskbar is never shared.",
     approveTitle_screen: "Let the agent see your full screen? (Otherwise it only sees the active app.)",
@@ -97,6 +100,9 @@ const STR = {
     costNote: "输入 = 新 token（含缓存写入）；缓存命中按约 10% 计价。费用为估算。",
     turnLabel: "本次请求",
     quitApp: "退出程序", quitting: "Polyglot Agent 已退出，可以关闭此窗口。",
+    windowLegend: "窗口", windowMode: "在以下位置打开应用", windowNote: "下次启动应用时生效。",
+    win_app: "内置窗口（WebView2，推荐）", win_edge: "Microsoft Edge 窗口",
+    win_chrome: "Google Chrome 窗口", win_browser: "默认浏览器标签页（如 Firefox）",
     shareLabel: "屏幕共享", shareWindow: "仅当前应用", shareScreen: "全屏",
     shareHint: "智能体截图包含的范围。任务栏永远不会被共享。",
     approveTitle_screen: "允许智能体查看整个屏幕？（否则只能看到当前应用。）",
@@ -824,6 +830,8 @@ function fillSettingsForm() {
   fillSelect("effort", meta.efforts || []); fillSelect("translator_effort", meta.efforts || []);
   fillSelect("shell_mode", meta.approval_modes || []); fillSelect("file_tools_mode", meta.approval_modes || []);
   fillSelect("capture_mode", meta.capture_modes || ["window", "screen"]);
+  fillSelect("window_mode", meta.window_modes || ["app"]);
+  [...(form.elements.window_mode || { options: [] }).options].forEach((o) => (o.textContent = t("win_" + o.value)));
   const dl = $("modelList"); dl.replaceChildren(); (meta.models || []).forEach((m) => { const o = el("option"); o.value = m; dl.appendChild(o); });
   for (const [k, v] of Object.entries(settings)) {
     const f = form.elements[k]; if (!f || k === "api_key") continue;

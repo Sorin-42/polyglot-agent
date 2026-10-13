@@ -44,6 +44,9 @@ CONTEXT_WINDOWS = {
 }
 DEFAULT_CONTEXT_WINDOW = 200_000
 CAPTURE_MODES = ["window", "screen"]
+# Where the UI opens (applied at launch): built-in WebView2 window, Edge/Chrome app
+# window, or a tab in the default browser (e.g. Firefox).
+WINDOW_MODES = ["app", "edge", "chrome", "browser"]
 
 # The user picks one of these; the app never guesses the language from their text.
 LANGUAGES = [
@@ -91,6 +94,8 @@ class Settings:
     memory_enabled: bool = True
     memory_pass: bool = True               # background memory review after each turn
     memory_pass_model: str = "claude-haiku-5-5"
+    # desktop window, applied at the next launch
+    window_mode: str = "app"               # see WINDOW_MODES
     # context management (server-side tool-result clearing)
     context_clear_trigger: int = 100_000
     context_keep_tool_uses: int = 6
@@ -147,6 +152,8 @@ def apply_updates(s: Settings, updates: dict) -> Settings:
         if k in ("shell_mode", "file_tools_mode") and v not in APPROVAL_MODES:
             continue
         if k == "capture_mode" and v not in CAPTURE_MODES:
+            continue
+        if k == "window_mode" and v not in WINDOW_MODES:
             continue
         if k == "language" and v not in LANGUAGES:
             continue  # also drops the old "auto" value, so the user is asked to choose

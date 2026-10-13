@@ -86,6 +86,7 @@ def _origin_ok(origin: Optional[str]) -> bool:
 def _meta() -> dict:
     return {"models": config.MODELS, "efforts": config.EFFORTS, "languages": config.LANGUAGES,
             "approval_modes": config.APPROVAL_MODES, "capture_modes": config.CAPTURE_MODES,
+            "window_modes": config.WINDOW_MODES,
             "app_name": config.APP_NAME, "data_dir": str(config.DATA_DIR),
             "desktop": state.shutdown is not None}
 
