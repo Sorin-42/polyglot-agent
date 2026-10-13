@@ -129,6 +129,9 @@ def test_full_turn_translates_and_keeps_agent_english(monkeypatch):
     for b in main_bodies:
         assert not CJK.search(json.dumps(b["messages"], ensure_ascii=False))
         assert not CJK.search(_system_text(b))
+        # ...and is never told that a translation layer or another language exists
+        told = (_system_text(b) + json.dumps(b["tools"])).lower()
+        assert "translat" not in told and "english" not in told and "<language>" not in told
     assert b1["messages"][0]["content"][-1]["text"] == "Take a screenshot and tell me what is on the screen."
 
     # UI got the original, the English, the translation, the screenshot and the memory update
