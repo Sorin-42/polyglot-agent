@@ -333,3 +333,72 @@ def test_repair_and_prune_helpers(monkeypatch):
     assert kinds.count("image") == agent_mod.PRUNE_KEEP and kinds[-1] == "image"
     assert sess._prune_images() == 0
     asyncio.run(sess.http.aclose())
+
+
+def _click_then_done(main_bodies):
+    def handler(request):
+        body = json.loads(request.content)
+        main_bodies.append(body)
+        if len(main_bodies) == 1:
+            return _stream([{"type": "tool_use", "id": "toolu_c1", "name": "left_click",
+                             "toolset_name": "computer", "input": {"coordinate": [10, 10]}}], "tool_use")
+        return _stream([{"type": "text", "text": "Clicked."}])
+    return handler
+
+
+def test_control_signal_shows_while_acting(monkeypatch, fake_overlay):
+    monkeypatch.setattr(agent_mod, "LocalComputer", FakeComputer)
+    main_bodies, events = [], []
+    settings = Settings(api_key="sk-test", language="English", memory_pass=False, shell_mode="off",
+                        file_tools_mode="off", web_search=False)
+    settings._auto_answer = True
+
+    async def run():
+        sess = make_session(settings, _click_then_done(main_bodies), events)
+        await sess.submit("Click the corner", [])
+        await sess.turn_task
+        await sess.close()
+
+    asyncio.run(run())
+    from app.overlay import DEFAULT_LABEL
+    assert fake_overlay[0].calls == [("show", DEFAULT_LABEL, True), ("pointer", True), ("hide",)]
+    # the agent is never told about the signal
+    told = _system_text(main_bodies[0]).lower()
+    assert all(w not in told for w in ("esc to stop", "border", "overlay", "pointer marker"))
+
+
+def test_escape_stops_the_agent(monkeypatch, fake_overlay):
+    import threading as th
+    from app.computer import UserAbort
+    clicking = th.Event()
+
+    class SlowComputer(FakeComputer):
+        def execute(self, name, inp):
+            self.calls.append((name, inp))
+            clicking.set()
+            if self.stop_event.wait(5):        # like LocalComputer: abort when stopped
+                raise UserAbort("Stopped by user")
+            return {"content": [{"type": "text", "text": "OK"}], "image": None}
+
+    monkeypatch.setattr(agent_mod, "LocalComputer", SlowComputer)
+    main_bodies, events = [], []
+    settings = Settings(api_key="sk-test", language="English", memory_pass=False, shell_mode="off",
+                        file_tools_mode="off", web_search=False, control_indicator=False)
+    settings._auto_answer = True
+
+    async def run():
+        sess = make_session(settings, _click_then_done(main_bodies), events)
+        await sess.submit("Click the corner", [])
+        await asyncio.to_thread(clicking.wait, 5)
+        # the overlay's keyboard hook calls this from its own thread on a physical Esc
+        th.Thread(target=fake_overlay[0].on_escape).start()
+        await asyncio.wait_for(sess.turn_task, 5)
+        await asyncio.sleep(0.05)
+        await sess.close()
+
+    asyncio.run(run())
+    assert len(main_bodies) == 1                                   # nothing after the Esc
+    assert any(e["type"] == "notice" and "Esc" in e["text"] for e in events)
+    calls = fake_overlay[0].calls
+    assert calls[0][0] == "show" and calls[0][2] is False          # Esc works with the border off
+    assert calls[-1] == ("hide",)

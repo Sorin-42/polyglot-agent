@@ -1,5 +1,6 @@
 import asyncio
 import json
+import sys
 
 import httpx
 import pytest
@@ -351,3 +352,33 @@ def test_app_browser_preference_and_separate_profiles(monkeypatch, tmp_path):
         assert desktop._open_app_window("http://127.0.0.1:1/", "chrome") == "proc"
     profiles = [next(a for a in args if a.startswith("--user-data-dir=")) for args in launched]
     assert profiles[0].endswith("window-profile-chrome") and profiles[1].endswith("window-profile")
+
+
+def test_control_overlay_pieces():
+    from app.overlay import (DEFAULT_LABEL, control_label, is_physical_escape, render_edge,
+                             render_label, render_marker)
+    assert control_label("简体中文").startswith("Claude 正在使用你的电脑")
+    assert control_label("Deutsch") == DEFAULT_LABEL
+    # only a real key press stops the agent; Esc the agent sends itself is injected
+    assert is_physical_escape(0x1B, 0) and not is_physical_escape(0x1B, 0x10)
+    assert not is_physical_escape(0x41, 0)
+    assert render_edge(100, 14, "top").size == (100, 14) and render_edge(80, 14, "left").size == (14, 80)
+    top = render_edge(10, 14, "top")
+    assert top.getpixel((5, 0))[3] > 200 and top.getpixel((5, 13))[3] < 20    # solid at the edge, fades in
+    assert render_label(DEFAULT_LABEL, 2.0).width > render_label(DEFAULT_LABEL, 1.0).width
+    img, (hx, hy) = render_marker(1.0)
+    assert img.getpixel((hx, hy))[3] > 200                                     # the hotspot dot
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows keyboard hook")
+def test_control_overlay_hook_swallows_only_physical_escape():
+    import ctypes
+    from app import overlay as ov
+    hits = []
+    o = ov.ControlOverlay(on_escape=lambda: hits.append(1))
+    injected = ov.KBDLLHOOKSTRUCT(vkCode=0x1B, flags=0x10)
+    physical = ov.KBDLLHOOKSTRUCT(vkCode=0x1B, flags=0)
+    assert o._on_key(0, 0x100, ctypes.addressof(injected)) != 1 and hits == []
+    assert o._on_key(0, 0x100, ctypes.addressof(physical)) == 1 and hits == [1]
+    assert o._on_key(0, 0x100, ctypes.addressof(physical)) == 1 and hits == [1]   # key repeat: once
+    assert o._on_key(0, 0x101, ctypes.addressof(physical)) == 1                   # its key-up too
