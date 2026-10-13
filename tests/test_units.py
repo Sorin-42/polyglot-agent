@@ -295,3 +295,22 @@ def test_desktop_free_port_falls_back_when_busy():
         assert p != busy and p > 0
     finally:
         s.close()
+
+
+def test_memory_backup_clear_and_restore(tmp_path):
+    m = MemoryStore(tmp_path / "memories")
+    assert m.backups == tmp_path / "memories-backups"       # outside /memories
+    m.execute({"command": "create", "path": "/memories/profile.md", "file_text": "- likes tea\n"})
+    m.execute({"command": "create", "path": "/memories/projects/board.md", "file_text": "- 4 layers\n"})
+    assert '<file path="/memories/projects/board.md">' in m.dump()
+    assert m.latest_backup() is None and m.restore_latest() is None
+    info = m.backup("clear")
+    assert info["kind"] == "clear" and info["files"] == 2 and m.latest_backup() == info
+    m.clear()
+    assert m.tree() == [] and m.base.is_dir()
+    assert m.restore_latest() == info                       # undo pops the backup
+    assert sorted(f["path"] for f in m.tree()) == ["/memories/profile.md", "/memories/projects/board.md"]
+    assert m.latest_backup() is None
+    for _ in range(12):
+        m.backup("tidy")
+    assert len(list(m.backups.iterdir())) == 10             # only the newest 10 are kept

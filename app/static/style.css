@@ -222,3 +222,8 @@ fieldset label.check { flex-direction: row; align-items: center; gap: 8px; }
 .mem-editor .row button { white-space: nowrap; flex-shrink: 0; }
 .mem-editor #memStatus { min-width: 0; }
 button:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ---------- memory clean-up ---------- */
+.mem-banner { padding: 8px 12px; font-size: 13px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--ok) 10%, var(--panel)); }
+.mem-banner.error { background: color-mix(in srgb, var(--err) 10%, var(--panel)); color: var(--err); }
+.mem-banner[hidden] { display: none; }

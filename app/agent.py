@@ -29,7 +29,7 @@ from .config import Settings
 from .local_tools import (EDITOR_NAME, EDITOR_WRITE_COMMANDS, POWERSHELL_TOOL, WINDOWS_TOOL,
                           describe_editor_write, folder_for, is_within, run_editor, run_powershell)
 from .memory_store import MemoryError_, MemoryStore
-from .prompts import MEMORY_PASS_SYSTEM, agent_system_prompt, slug
+from .prompts import MEMORY_PASS_SYSTEM, MEMORY_TIDY_SYSTEM, agent_system_prompt, slug
 from .store import Store, new_id
 from .translator import StreamingTranslation, Translator, english_name
 
@@ -47,6 +47,11 @@ COMPUTER_READONLY = {"screenshot", "zoom", "cursor_position", "wait"}
 USAGE_KEYS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")
 KEEP_THUMBS = 20
 MEMORY_TRANSLATION_CACHE = 200
+TIDY_TIMEOUT = 300
+
+
+class MemoryBusy(Exception):
+    """A memory clean-up can't run right now (the agent or another pass is using memory)."""
 
 
 def _id() -> str:
@@ -92,6 +97,7 @@ class Session:
         self.turn_task: Optional[asyncio.Task] = None
         self._stream_task: Optional[asyncio.Task] = None
         self.memory_task: Optional[asyncio.Task] = None
+        self.memory_maintenance = False        # a tidy-up is editing /memories
         self._memory_lock = asyncio.Lock()
         self.approvals: dict[str, asyncio.Future] = {}
         self.pending_approvals: dict[str, dict] = {}
@@ -165,6 +171,10 @@ class Session:
     async def submit(self, text: str, images: list[dict]) -> None:
         if self.busy:
             await self.notice("Still working on the previous request - press Stop first.", "warn")
+            return
+        if self.memory_maintenance:
+            await self.emit({"type": "notice", "id": _id(), "level": "warn",
+                             "text": "Memory is being tidied up - send again in a moment."})
             return
         if not self.get_settings().language:
             # The language is never guessed: the user picks it in the app first.
@@ -792,38 +802,94 @@ class Session:
         proj = self.store.get_project(chat.get("project_id"))
         where = (f"This chat belongs to the project \"{proj['name']}\"; project facts go in "
                  f"/memories/projects/{slug(proj['name'])}.md.\n\n") if proj else ""
-        msgs: list[dict] = [{"role": "user", "content": (
-            f"{where}<memory_snapshot>\n{self.memory.snapshot(8000)}\n</memory_snapshot>\n\n"
-            f"<transcript>\n{transcript}\n</transcript>\n\n"
-            "Review the transcript and update /memories as needed.")}]
-        summary = "no changes"
+        prompt = (f"{where}<memory_snapshot>\n{self.memory.snapshot(8000)}\n</memory_snapshot>\n\n"
+                  f"<transcript>\n{transcript}\n</transcript>\n\n"
+                  "Review the transcript and update /memories as needed.")
         try:
-            for _ in range(10):
-                body = {"model": s.memory_pass_model, "max_tokens": 8000, "system": MEMORY_PASS_SYSTEM,
-                        "messages": msgs, "tools": [{"type": "memory_20250818", "name": "memory"}],
-                        "output_config": {"effort": "medium"}}
-                msg = await stream_message(self.http, api_key=s.effective_api_key(),
-                                           base_url=s.base_url, body=body)
-                self._add_usage("memory", s.memory_pass_model, msg.get("usage") or {}, chat)
-                msgs.append({"role": "assistant", "content": msg["content"]})
-                uses = [b for b in msg["content"] if b.get("type") == "tool_use"]
-                if not uses:
-                    text = "".join(b.get("text", "") for b in msg["content"] if b.get("type") == "text")
-                    summary = text.strip().removeprefix("DONE:").strip() or summary
-                    break
-                results = []
-                for tu in uses:
-                    out, err = await self._memory_op(tu.get("input") or {}, source="pass")
-                    r = {"type": "tool_result", "tool_use_id": tu["id"], "content": out}
-                    if err:
-                        r["is_error"] = True
-                    results.append(r)
-                msgs.append({"role": "user", "content": results})
+            summary = await self._memory_agent(
+                MEMORY_PASS_SYSTEM, prompt, lambda m, u: self._add_usage("memory", m, u, chat), "pass")
         except Exception as e:  # noqa: BLE001
             summary = f"failed: {e}"
         await self.emit({"type": "memory_pass", "state": "done", "summary": summary[:300]})
         if chat is self.chat:
             await self.emit({"type": "usage", **self.usage_payload()})
+
+    async def _memory_agent(self, system: str, prompt: str, on_usage: Callable[[str, dict], None],
+                            source: str, steps: int = 10) -> str:
+        """Small tool loop in which a helper model edits /memories with the memory
+        tool. Returns its one-line summary (the text after "DONE:")."""
+        s = self.get_settings()
+        msgs: list[dict] = [{"role": "user", "content": prompt}]
+        summary = "no changes"
+        for _ in range(steps):
+            body = {"model": s.memory_pass_model, "max_tokens": 8000, "system": system,
+                    "messages": msgs, "tools": [{"type": "memory_20250818", "name": "memory"}],
+                    "output_config": {"effort": "medium"}}
+            msg = await stream_message(self.http, api_key=s.effective_api_key(),
+                                       base_url=s.base_url, body=body)
+            on_usage(s.memory_pass_model, msg.get("usage") or {})
+            msgs.append({"role": "assistant", "content": msg["content"]})
+            uses = [b for b in msg["content"] if b.get("type") == "tool_use"]
+            if not uses:
+                text = "".join(b.get("text", "") for b in msg["content"] if b.get("type") == "text")
+                return text.strip().removeprefix("DONE:").strip() or summary
+            results = []
+            for tu in uses:
+                out, err = await self._memory_op(tu.get("input") or {}, source=source)
+                r = {"type": "tool_result", "tool_use_id": tu["id"], "content": out}
+                if err:
+                    r["is_error"] = True
+                results.append(r)
+            msgs.append({"role": "user", "content": results})
+        return summary
+
+    # ======================================================= memory clean-up
+    def _check_memory_idle(self) -> None:
+        if self.busy:
+            raise MemoryBusy("The agent is still working on a request.")
+        if self.memory_task is not None and not self.memory_task.done():
+            raise MemoryBusy("Memory is still being updated after the last request.")
+        if self.memory_maintenance:
+            raise MemoryBusy("A memory clean-up is already running.")
+
+    async def tidy_memory(self) -> dict:
+        """AI clean-up of /memories: merge duplicates, drop stale lines. Backed up
+        first (undoable); if anything fails, the backup is put back."""
+        self._check_memory_idle()
+        if not self.memory.tree():
+            return {"summary": "Memory is empty.", "backup": None}
+        self.memory_maintenance = True
+        try:
+            async with self._memory_lock:
+                backup = self.memory.backup("tidy")
+            prompt = (f"<memory>\n{self.memory.dump()}\n</memory>\n\n"
+                      "Tidy up /memories as described.")
+            try:
+                summary = await asyncio.wait_for(self._memory_agent(
+                    MEMORY_TIDY_SYSTEM, prompt, self._session_usage, "tidy", steps=25), TIDY_TIMEOUT)
+            except BaseException:
+                async with self._memory_lock:
+                    self.memory.restore_latest()
+                raise
+        finally:
+            self.memory_maintenance = False
+        return {"summary": summary, "backup": backup}
+
+    async def clear_memory(self) -> dict:
+        """Delete all memory files (backed up first, so it can be undone)."""
+        self._check_memory_idle()
+        if not self.memory.tree():
+            return {"backup": None}
+        async with self._memory_lock:
+            backup = self.memory.backup("clear")
+            self.memory.clear()
+        return {"backup": backup}
+
+    async def undo_memory_clean(self) -> Optional[dict]:
+        """Put back the memory from before the last tidy-up or clear."""
+        self._check_memory_idle()
+        async with self._memory_lock:
+            return self.memory.restore_latest()
 
 
 class _StreamState:

@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import config
-from .agent import Session
+from .agent import MemoryBusy, Session
 from .api import APIError
 from .memory_store import MemoryError_
 
@@ -128,7 +128,8 @@ async def post_settings(request: Request):
 @app.get("/api/memory")
 async def memory_tree(request: Request):
     _check(request)
-    return {"files": state.session.memory.tree(), "dir": str(state.session.memory.base)}
+    mem = state.session.memory
+    return {"files": mem.tree(), "dir": str(mem.base), "undo": mem.latest_backup()}
 
 
 @app.get("/api/memory/file")
@@ -181,6 +182,55 @@ async def memory_delete(request: Request, path: str):
         raise HTTPException(400, str(e)) from None
     await hub.broadcast({"type": "memory_op", "source": "user", "command": "delete", "path": path})
     return {"ok": True}
+
+
+# Clean-up: every operation backs memory up first, and /undo puts the last backup back.
+async def _memory_cleaned(command: str, result: dict) -> dict:
+    await hub.broadcast({"type": "memory_op", "source": "clean", "command": command, "path": "/memories"})
+    await hub.broadcast({"type": "usage", **state.session.usage_payload()})
+    return {**result, "undo": state.session.memory.latest_backup()}
+
+
+@app.post("/api/memory/tidy")
+async def memory_tidy(request: Request):
+    """AI tidy-up: merge duplicates, drop stale lines. Undoable."""
+    _check(request)
+    try:
+        res = await state.session.tidy_memory()
+    except MemoryBusy as e:
+        raise HTTPException(409, str(e)) from None
+    except (APIError, httpx.HTTPError, asyncio.TimeoutError) as e:
+        why = getattr(e, "message", None) or str(e) or "timed out"
+        raise HTTPException(502, f"Tidy-up failed; memory was restored. ({why})") from None
+    try:  # the summary is English; show it in the user's language
+        res["summary"] = await state.session.translate_memory(res["summary"])
+    except (APIError, httpx.HTTPError):
+        pass
+    return await _memory_cleaned("tidy", res)
+
+
+@app.post("/api/memory/clear")
+async def memory_clear(request: Request):
+    """Delete every memory file. Undoable."""
+    _check(request)
+    try:
+        res = await state.session.clear_memory()
+    except MemoryBusy as e:
+        raise HTTPException(409, str(e)) from None
+    return await _memory_cleaned("clear", res)
+
+
+@app.post("/api/memory/undo")
+async def memory_undo(request: Request):
+    """Restore memory from before the last tidy-up or clear."""
+    _check(request)
+    try:
+        restored = await state.session.undo_memory_clean()
+    except MemoryBusy as e:
+        raise HTTPException(409, str(e)) from None
+    if restored is None:
+        raise HTTPException(404, "Nothing to undo.")
+    return await _memory_cleaned("undo", {"restored": restored})
 
 
 @app.post("/api/quit")

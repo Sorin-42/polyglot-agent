@@ -88,9 +88,13 @@
     <strong data-i18n="memory">Memory</strong>
     <span id="memDir" class="muted small"></span>
     <span class="spacer"></span>
+    <button id="memUndo" class="ghost" data-i18n="undoClean" hidden>Undo</button>
+    <button id="memTidy" class="ghost" data-i18n="tidyMem">Tidy up</button>
+    <button id="memClear" class="danger ghost" data-i18n="clearMem">Clear all</button>
     <button id="memNew" class="ghost" data-i18n="newFile">New file</button>
     <button id="memClose" class="ghost">✕</button>
   </div>
+  <div id="memBanner" class="mem-banner" hidden></div>
   <div class="drawer-body">
     <ul id="memList" class="mem-list"></ul>
     <div class="mem-editor">
