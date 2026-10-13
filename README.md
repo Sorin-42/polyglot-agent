@@ -21,7 +21,7 @@ A local computer-use assistant for Windows that you can talk to in any language.
  Haiku: back to your language, paragraph by paragraph ──► UI
 ```
 
-Because the agent only ever sees English, its reasoning, tool calls and memory stay in one language. The UI still shows you both versions: click **Show English** under any reply, or turn on *Show English originals* in Settings.
+Because the agent only ever sees English, its reasoning, tool calls and memory stay in one language. The agent is not told that a translation layer exists or which language you use: from its side, you simply write English. The UI still shows you both versions: click **Show English** under any reply, or turn on *Show English originals* in Settings.
 
 ### Prompt cache stays intact
 
@@ -29,7 +29,7 @@ Translation happens only at the edges. The agent's transcript is append-only, an
 
 ### What the agent receives from your PC
 
-- **System prompt:** today's date, the project's name, instructions and readable folders, and a memory snapshot. It contains no OS version, hardware or screen details.
+- **System prompt:** today's date, the project's name, instructions and readable folders, and a memory snapshot. Nothing about your language or the translation layer. It contains no OS version, hardware or screen details.
 - **Screen-sharing switch** (above the message box): **Active app** (the default) or **Full screen**. If the agent needs the full screen while you're on Active app, it has to ask and you approve or deny. Switching back to Active app never asks.
 - **Screenshots (default):** only the focused window, plus any menu or dropdown it has open. The taskbar is never included. When the chat window itself is focused, no image is sent at all. The agent switches apps with a small `windows` tool (list/focus) instead of screenshotting the taskbar. *Screen* mode (in Settings, or requested by the agent for drag-and-drop) captures the whole screen minus the taskbar.
 - **Files:** only after you allow the folder, as described above.

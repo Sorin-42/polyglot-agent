@@ -2,6 +2,14 @@
 
 All notable changes to Polyglot Agent. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.2.1] - 2026-10-13
+
+### Changed
+- The main agent no longer knows about the translation layer. The system prompt's `<language>` section
+  and the "English only" memory rule are gone, so the agent is never told that another language or a
+  translator exists. A test checks that the system prompt and tool list never mention translation.
+  Chats started before this keep their original prompt (it is frozen per chat for the prompt cache).
+
 ## [0.2.0] - 2026-10-13
 
 ### Added
