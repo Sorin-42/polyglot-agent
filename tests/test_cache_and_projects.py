@@ -33,7 +33,7 @@ def test_translation_never_touches_cached_prefix(monkeypatch, tmp_path):
         if system.startswith("You are a translation layer between"):
             translator_bodies.append(body)
             n = len(translator_bodies)
-            return _stream([{"type": "text", "text": f"<lang>Other</lang><english>Request number {n}.</english>"}])
+            return _stream([{"type": "text", "text": f"<english>Request number {n}.</english>"}])
         if system.startswith("You are a translation layer. Translate"):
             translator_bodies.append(body)
             return _stream([{"type": "text", "text": "翻訳されたテキスト"}])
@@ -154,13 +154,13 @@ def test_chats_projects_and_usage(monkeypatch, tmp_path):
     def handler(request):
         body = json.loads(request.content)
         if _system_text(body).startswith("You are a translation layer"):
-            return _stream([{"type": "text", "text": "<lang>Simplified Chinese</lang><english>Hi</english>"}]) \
+            return _stream([{"type": "text", "text": "<english>Hi</english>"}]) \
                 if "between" in _system_text(body) else _stream([{"type": "text", "text": "你好"}])
         return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=sse(
             [{"type": "text", "text": "Hello."}]))
 
     events = []
-    settings = Settings(api_key="k", language="auto", memory_pass=False, computer_use=False)
+    settings = Settings(api_key="k", language="简体中文", memory_pass=False, computer_use=False)
     settings._auto_answer = True
 
     async def run():

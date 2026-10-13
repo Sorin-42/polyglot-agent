@@ -3,9 +3,10 @@
 A local computer-use assistant for Windows that you can talk to in any language.
 
 - **Main agent:** `claude-opus-5-5` at **high** effort, with adaptive thinking (summaries shown in the UI).
+- **Your language, chosen by you:** on first launch you pick your language from a list. The app never detects or guesses it from your text, browser or Windows settings. Change it any time in the top bar.
 - **Translation layer:** `claude-haiku-5-5` translates your message into English before the agent sees it, and translates the agent's English reply back into your language while it streams, one paragraph at a time.
 - **Tools:** computer control (`computer_toolset_20260801`: screenshots, zoom, mouse, keyboard), PowerShell, file view/edit, web search, and a persistent **memory** (`memory_20250818`).
-- **Memory:** the agent saves what it learns about you and your projects (PCB boards, codebases, lab setups, preferences) as it works. After each request, a background reviewer also updates `/memories`. You can browse and edit everything in the **Memory** panel.
+- **Memory:** the agent saves what it learns about you and your projects (PCB boards, codebases, lab setups, preferences) as it works. After each request, a background reviewer also updates `/memories`. You can browse and edit everything in the **Memory** panel. Memory is stored in English; click **Translate** there to read it in your language (read-only, cached; **Show original** to edit).
 - **Projects and chats:** each chat is either inside a project or a random chat. A project has a name, optional instructions for the agent, and a list of folders the agent may read. Chats are saved and can be reopened from the sidebar.
 - **Folder permission:** the first time the agent reads a file in a new folder, you choose *Allow this folder* (you can edit the folder, for example widening it to the project root), *Just this file* or *Deny*. After that, reads in that folder never ask again, in this chat and in every later chat of the same project.
 - **Token usage:** the header meter shows how much of the context window is used and how much is left. Click it for a per-chat breakdown (agent, translator and memory review: input, cache hits, output, estimated cost). A one-line summary also follows every request.
@@ -41,7 +42,8 @@ Translation happens only at the edges. The agent's transcript is append-only, an
    - **First launch only:** a console window installs the app's components into a private `.venv` folder, which takes about a minute. This needs Python 3.10 or newer, and the exe finds it automatically (python.org install, `py` launcher, PATH, or Anaconda/Miniconda). If none is found, it offers to open the Python download page.
    - **Every launch after that:** no console. The app opens in its own window (Edge or Chrome app mode, no tabs or address bar).
    - Closing the window quits the app. Launching it again while it's open brings the existing window to the front.
-3. Open ⚙ Settings and paste your API key from https://platform.claude.com. Alternatively, set the `ANTHROPIC_API_KEY` environment variable before launching.
+3. Choose your language in the picker that appears (you can't send messages until you do).
+4. Open ⚙ Settings and paste your API key from https://platform.claude.com. Alternatively, set the `ANTHROPIC_API_KEY` environment variable before launching.
 
 Windows SmartScreen may warn the first time, because the exe isn't code-signed: click **More info → Run anyway**. You can avoid that by right-clicking the zip → **Properties** → **Unblock** before you unzip it.
 
@@ -66,7 +68,7 @@ python -m venv .venv
 .venv\Scripts\pythonw -m app.desktop      REM same as the exe
 ```
 
-Pick your language from the selector at the top. **Auto-detect** replies in whatever language you last wrote in.
+Your language is the one you chose in the top bar; the translator is told that language and never detects it. Replies come back in that language.
 
 ## Safety: it controls your real mouse and keyboard
 
@@ -118,6 +120,10 @@ tests/                  pytest suite (mocked API and computer)
 ```
 
 Run the tests with `pip install pytest` and then `python -m pytest -q`.
+
+## Version control
+
+The project is a git repository. `main` holds released states, tagged `v0.1.0`, `v0.2.0`, …; new work goes on a `feat/…` or `fix/…` branch and is merged into `main` when it passes the tests. Changes are listed in [CHANGELOG.md](CHANGELOG.md). Runtime data (`data/`, which holds your API key, chats and memory) and `.venv/` are in `.gitignore` and never committed.
 
 ## Notes and limits
 

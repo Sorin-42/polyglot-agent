@@ -96,8 +96,10 @@
     <div class="mem-editor">
       <input id="memPath" class="mono" placeholder="/memories/notes.md">
       <textarea id="memText" class="mono" spellcheck="false"></textarea>
+      <div id="memView" class="md mem-view" hidden></div>
       <div class="row">
         <button id="memSave" class="primary" data-i18n="save">Save</button>
+        <button id="memTranslate" class="ghost" hidden>Translate</button>
         <button id="memDelete" class="danger ghost" data-i18n="delete">Delete</button>
         <span id="memStatus" class="muted small"></span>
       </div>
@@ -172,6 +174,18 @@
     </div>
     <div class="modal-foot"><button type="button" id="btnQuit" class="danger ghost" data-i18n="quitApp" hidden>Quit app</button><span id="setStatus" class="muted small"></span><button type="submit" class="primary" data-i18n="save">Save</button></div>
   </form>
+</div>
+
+<!-- Language picker: shown until the user chooses; the app never detects the language -->
+<div id="langModal" class="modal" hidden>
+  <div class="modal-card lang-card" role="dialog" aria-labelledby="langTitle">
+    <div class="modal-head"><strong id="langTitle" data-i18n="chooseLanguage">Choose your language</strong></div>
+    <div class="modal-body">
+      <p class="muted small">选择你的语言 · 言語を選択 · 언어 선택 · Elige tu idioma · Choisissez votre langue · Sprache wählen</p>
+      <div id="langGrid" class="lang-grid"></div>
+      <p class="muted small" data-i18n="chooseLanguageBody">You write and read in this language; the agent works in English behind the scenes. Change it any time from the top bar.</p>
+    </div>
+  </div>
 </div>
 
 <!-- Image viewer -->

@@ -1,8 +1,12 @@
+import json
+
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from app import server
+from conftest import sse
 
 
 def test_token_and_origin_checks():
@@ -60,3 +64,32 @@ def test_websocket_rejects_foreign_host():
         with pytest.raises(Exception):
             with c.websocket_connect(f"ws://rebind.attacker.example:8765/ws?token={server.TOKEN}") as ws:
                 ws.receive_text()
+
+
+def test_memory_translation_is_read_only_and_cached():
+    h = {"X-Token": server.TOKEN}
+    calls = []
+
+    def handler(request):
+        calls.append(json.loads(request.content))
+        return httpx.Response(200, headers={"content-type": "text/event-stream"},
+                              content=sse([{"type": "text", "text": "- 喜欢喝茶"}], model="claude-haiku-5-5"))
+
+    with TestClient(server.app, base_url="http://127.0.0.1:8765") as c:
+        server.state.session.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        c.put("/api/memory/file", headers=h, json={"path": "/memories/likes.md", "content": "- likes tea"})
+        server.state.settings.language = ""
+        assert c.post("/api/memory/translate", headers=h, json={"content": "- likes tea"}).status_code == 400
+        c.post("/api/settings", headers=h, json={"language": "English"})
+        r = c.post("/api/memory/translate", headers=h, json={"content": "- likes tea"})
+        assert r.json()["text"] == "- likes tea" and calls == []          # English: no call
+        c.post("/api/settings", headers=h, json={"language": "简体中文", "api_key": "sk-test"})
+        for _ in range(2):
+            r = c.post("/api/memory/translate", headers=h, json={"content": "- likes tea"})
+            assert r.status_code == 200 and r.json() == {"text": "- 喜欢喝茶", "language": "简体中文"}
+        assert len(calls) == 1                                             # second click: cached
+        assert "into Simplified Chinese" in calls[0]["system"]
+        # the memory file itself stays English
+        got = c.get("/api/memory/file", headers=h, params={"path": "/memories/likes.md"}).json()
+        assert got["content"] == "- likes tea"
+        assert c.post("/api/memory/translate", json={"content": "x"}).status_code == 403

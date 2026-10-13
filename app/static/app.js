@@ -28,7 +28,12 @@ const STR = {
     approveTitle_computer: "Allow this action?", approveTitle_folder: "Allow reading files here?",
     approve: "Allow", deny: "Deny", allowFolder: "Allow this folder", allowOnce: "Just this file", folder: "Folder",
     approved: "Answered", memUpdated: "Memory updated", memUpdating: "Updating memory…",
-    saved: "Saved", copy: "Copy", copied: "Copied", auto: "Auto-detect",
+    saved: "Saved", copy: "Copy", copied: "Copied",
+    chooseLanguage: "Choose your language",
+    chooseLanguageBody: "You write and read in this language; the agent works in English behind the scenes. Change it any time from the top bar.",
+    choose: "Choose…",
+    translateMem: "Translate", showOriginal: "Show original", translatingMem: "Translating…",
+    memTranslatedNote: "Translation for reading only. Memory is stored in English for the agent; switch to the original to edit.",
     newProject: "New project", projects: "Projects", randomChats: "Random chats", project: "Project",
     projectName: "Name", projectInstructions: "Instructions for the agent (optional)",
     instructionsHint: "e.g. 4-layer board, JLCPCB rules, KiCad 9. Answer with metric units.",
@@ -63,7 +68,12 @@ const STR = {
     approveTitle_computer: "允许这个操作？", approveTitle_folder: "允许读取这里的文件？",
     approve: "允许", deny: "拒绝", allowFolder: "允许整个文件夹", allowOnce: "仅此文件", folder: "文件夹",
     approved: "已处理", memUpdated: "记忆已更新", memUpdating: "正在更新记忆…",
-    saved: "已保存", copy: "复制", copied: "已复制", auto: "自动识别",
+    saved: "已保存", copy: "复制", copied: "已复制",
+    chooseLanguage: "选择你的语言",
+    chooseLanguageBody: "你用这种语言输入和阅读；智能体在后台使用英文工作。之后可随时在顶部栏更改。",
+    choose: "请选择…",
+    translateMem: "翻译", showOriginal: "显示原文", translatingMem: "翻译中…",
+    memTranslatedNote: "译文仅供阅读。记忆以英文保存供智能体使用；如需编辑请切换到原文。",
     newProject: "新项目", projects: "项目", randomChats: "随手聊", project: "项目",
     projectName: "名称", projectInstructions: "给智能体的说明（可选）",
     instructionsHint: "例如：四层板、嘉立创工艺、KiCad 9，回答使用公制单位。",
@@ -82,11 +92,10 @@ const STR = {
     approveTitle_screen: "允许智能体查看整个屏幕？（否则只能看到当前应用。）",
   },
 };
+// The UI follows the language the user chose; nothing is detected from the browser or OS.
 function uiLang() {
-  const l = settings.language || "auto";
-  if (l === "简体中文" || l === "繁體中文") return "zh";
-  if (l === "auto" && (navigator.language || "").toLowerCase().startsWith("zh")) return "zh";
-  return "en";
+  const l = settings.language || "";
+  return l === "简体中文" || l === "繁體中文" ? "zh" : "en";
 }
 const t = (k) => (STR[uiLang()] && STR[uiLang()][k]) || STR.en[k] || k;
 function applyI18n() {
@@ -644,6 +653,7 @@ function handle(ev) {
     case "settings":
       settings = ev.settings; applyI18n(); fillLang(); fillSettingsForm(); renderSidebar(); renderCtx(); renderShareSwitch();
       document.querySelectorAll(".orig-en").forEach((o) => (o.hidden = !settings.show_original));
+      if (!$("memoryDrawer").hidden) applyMemView();
       break;
     case "status": setStatus(ev.state, ev.detail); break;
     case "user_message": renderUser(ev); break;
@@ -704,6 +714,7 @@ input.addEventListener("keydown", (e) => {
 $("composer").addEventListener("submit", (e) => {
   e.preventDefault();
   if (busy) return;
+  if (!settings.language) { renderLangGate(); return; }
   const text = input.value;
   if (!text.trim() && !attachments.length) return;
   send({ type: "send", text, images: attachments.map((a) => ({ media_type: a.type, data: a.data })) });
@@ -747,12 +758,31 @@ function renderAttachments() {
 function fillLang() {
   const sel = $("langSelect");
   sel.replaceChildren();
-  (meta.languages || []).forEach((l) => {
-    const o = el("option", "", l === "auto" ? t("auto") : l); o.value = l; sel.appendChild(o);
-  });
-  sel.value = settings.language;
+  if (!settings.language) {
+    const o = el("option", "", t("choose")); o.value = ""; o.disabled = true; sel.appendChild(o);
+  }
+  (meta.languages || []).forEach((l) => { const o = el("option", "", l); o.value = l; sel.appendChild(o); });
+  sel.value = settings.language || "";
+  renderLangGate();
 }
-$("langSelect").onchange = async (e) => { await api("POST", "/api/settings", { language: e.target.value }); };
+async function chooseLanguage(lang) {
+  try { await api("POST", "/api/settings", { language: lang }); }
+  catch (err) { alertNotice(err.message); }
+}
+$("langSelect").onchange = (e) => chooseLanguage(e.target.value);
+// Until a language is chosen, show the picker and keep the composer locked.
+function renderLangGate() {
+  const need = !settings.language;
+  $("langModal").hidden = !need;
+  input.disabled = need;
+  if (!need) return;
+  const grid = $("langGrid");
+  grid.replaceChildren();
+  (meta.languages || []).forEach((l) => {
+    const b = el("button", "", l); b.type = "button"; b.onclick = () => chooseLanguage(l);
+    grid.appendChild(b);
+  });
+}
 const screenPanel = $("screenPanel");
 screenPanel.hidden = !store.get("pa.screen", true);
 $("btnScreen").onclick = () => { screenPanel.hidden = !screenPanel.hidden; store.set("pa.screen", !screenPanel.hidden); };
@@ -836,11 +866,48 @@ async function openMemFile(path) {
     const j = await api("GET", "/api/memory/file?path=" + encodeURIComponent(path));
     memCurrent = path; $("memPath").value = path; $("memText").value = j.content; $("memStatus").textContent = "";
     document.querySelectorAll("#memList li").forEach((li) => li.classList.toggle("active", li.title.startsWith(path + " ")));
+    applyMemView();
   } catch (err) { $("memStatus").textContent = err.message; }
 }
-$("btnMemory").onclick = () => { $("memoryDrawer").hidden = false; loadMemory(); };
+$("btnMemory").onclick = () => { $("memoryDrawer").hidden = false; loadMemory(); applyMemView(); };
 $("memClose").onclick = () => ($("memoryDrawer").hidden = true);
-$("memNew").onclick = () => { memCurrent = ""; $("memPath").value = "/memories/"; $("memText").value = ""; $("memPath").focus(); };
+$("memNew").onclick = () => {
+  memCurrent = ""; $("memPath").value = "/memories/"; $("memText").value = ""; applyMemView(); $("memPath").focus();
+};
+
+/* One-click translation. Memory stays English on disk (the agent reads it); this
+   shows a read-only translation in the user's language. Once switched on, it stays
+   on for every file opened, until "Show original" is clicked. */
+let memTrOn = store.get("pa.memTranslate", false), memTrSeq = 0;
+function memCanTranslate() { return !!settings.language && settings.language !== "English"; }
+function setMemTranslated(on) {
+  $("memText").hidden = on; $("memView").hidden = !on; $("memSave").disabled = on;
+  if (!on && $("memStatus").textContent === t("memTranslatedNote")) $("memStatus").textContent = "";
+}
+async function applyMemView() {
+  const btn = $("memTranslate"), seq = ++memTrSeq, text = $("memText").value;
+  const label = () => { btn.disabled = false; btn.textContent = memTrOn ? t("showOriginal") : t("translateMem"); };
+  btn.hidden = !memCanTranslate();
+  btn.title = settings.language ? `${t("translateMem")} → ${settings.language}` : "";
+  label();
+  if (!memTrOn || !memCanTranslate() || !text.trim()) { setMemTranslated(false); return; }
+  btn.disabled = true; btn.textContent = t("translatingMem");
+  try {
+    const j = await api("POST", "/api/memory/translate", { content: text });
+    if (seq !== memTrSeq) return;                 // another file was opened meanwhile
+    renderMd($("memView"), j.text);
+    setMemTranslated(true);
+    $("memStatus").textContent = t("memTranslatedNote");
+  } catch (err) {
+    if (seq !== memTrSeq) return;
+    memTrOn = false; store.set("pa.memTranslate", false);
+    setMemTranslated(false);
+    $("memStatus").textContent = err.message;
+  } finally {
+    if (seq === memTrSeq) label();
+  }
+}
+$("memTranslate").onclick = () => { memTrOn = !memTrOn; store.set("pa.memTranslate", memTrOn); applyMemView(); };
 $("memSave").onclick = async () => {
   try {
     await api("PUT", "/api/memory/file", { path: $("memPath").value.trim(), content: $("memText").value });
@@ -850,7 +917,7 @@ $("memSave").onclick = async () => {
 $("memDelete").onclick = () => twoClick($("memDelete"), t("delete"), async () => {
   try {
     await api("DELETE", "/api/memory/file?path=" + encodeURIComponent($("memPath").value.trim()));
-    memCurrent = ""; $("memText").value = ""; $("memPath").value = ""; loadMemory();
+    memCurrent = ""; $("memText").value = ""; $("memPath").value = ""; applyMemView(); loadMemory();
   } catch (err) { $("memStatus").textContent = err.message; }
 });
 

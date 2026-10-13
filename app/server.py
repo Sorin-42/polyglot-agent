@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
+import httpx
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -17,6 +18,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import config
 from .agent import Session
+from .api import APIError
 from .memory_store import MemoryError_
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -152,6 +154,21 @@ async def memory_write(request: Request):
         raise HTTPException(400, str(e)) from None
     await hub.broadcast({"type": "memory_op", "source": "user", "command": "create", "path": body.get("path")})
     return {"ok": True}
+
+
+@app.post("/api/memory/translate")
+async def memory_translate(request: Request):
+    """Translate memory text into the user's language for reading. Nothing is saved."""
+    _check(request)
+    if not state.settings.language:
+        raise HTTPException(400, "Choose your language first.")
+    body = await request.json()
+    try:
+        text = await state.session.translate_memory(str(body.get("content") or "")[:100_000])
+    except (APIError, httpx.HTTPError) as e:
+        raise HTTPException(502, f"Translation failed: {getattr(e, 'message', None) or e}") from None
+    await hub.broadcast({"type": "usage", **state.session.usage_payload()})
+    return {"text": text, "language": state.settings.language}
 
 
 @app.delete("/api/memory/file")

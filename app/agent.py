@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import copy
+import hashlib
 import io
 import json
 import threading
@@ -45,6 +46,7 @@ PRUNE_KEEP = 8
 COMPUTER_READONLY = {"screenshot", "zoom", "cursor_position", "wait"}
 USAGE_KEYS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")
 KEEP_THUMBS = 20
+MEMORY_TRANSLATION_CACHE = 200
 
 
 def _id() -> str:
@@ -93,6 +95,7 @@ class Session:
         self._memory_lock = asyncio.Lock()
         self.approvals: dict[str, asyncio.Future] = {}
         self.pending_approvals: dict[str, dict] = {}
+        self._memory_translations: dict[tuple[str, str], str] = {}
         self._live_translations: list[StreamingTranslation] = []
         self._translations: list[asyncio.Task] = []
         self._use_binding = True
@@ -162,6 +165,11 @@ class Session:
     async def submit(self, text: str, images: list[dict]) -> None:
         if self.busy:
             await self.notice("Still working on the previous request - press Stop first.", "warn")
+            return
+        if not self.get_settings().language:
+            # The language is never guessed: the user picks it in the app first.
+            await self.emit({"type": "notice", "id": _id(), "level": "warn",
+                             "text": "Choose your language first (top bar)."})
             return
         self.stop_event.clear()
         self.turn_task = asyncio.create_task(self._turn(text, images))
@@ -397,18 +405,15 @@ class Session:
         self._pending_notice = ""
         self._translations = []
         try:
-            # ---- 1. translate the user's message into English
+            # ---- 1. translate the user's message into English (from the language they chose)
+            language = english_name(s.language)
             await self.status("translating_in")
             try:
-                english, detected = await self.translator.to_english(text, s.language)
+                english = await self.translator.to_english(text, s.language)
             except APIError as e:
                 await self.notice(f"Translation failed ({e.message}); sending the original text.", "warn")
-                english, detected = text, english_name(s.language) if s.language != "auto" else "English"
-            if s.language != "auto":
-                chat["reply_language"] = english_name(s.language)
-            elif not (detected == "English" and len(text.split()) <= 3 and self.display):
-                # a short "ok"/"thanks" keeps replying in the language already in use
-                chat["reply_language"] = detected
+                english = text
+            chat["reply_language"] = language
             if not chat["title"]:
                 chat["title"] = " ".join(text.split())[:60] or "Image"
 
@@ -419,7 +424,7 @@ class Session:
                     img_blocks.append(prepared[0])
                     thumbs.append(prepared[1])
             uitem = self._store({"type": "user", "id": _id(), "original": text, "english": english,
-                                 "lang": detected, "images": thumbs,
+                                 "lang": language, "images": thumbs,
                                  "translated": english.strip() != text.strip()})
             await self.emit({**uitem, "type": "user_message"})
 
@@ -745,6 +750,26 @@ class Session:
         out, err = await asyncio.to_thread(run_editor, inp)
         await self._action_done(item, not err, out if cmd != "view" else out[:400])
         return out + note, err
+
+    # ================================================== memory translation
+    async def translate_memory(self, text: str) -> str:
+        """One-click translation of memory text into the user's language, for reading
+        only. Memory stays English on disk (the agent reads it); nothing is written."""
+        language = english_name(self.get_settings().language)
+        if language in ("", "English") or not text.strip():
+            return text
+        key = (hashlib.sha256(text.encode("utf-8")).hexdigest(), language)
+        if key not in self._memory_translations:
+            # Counted in the session total, not in whichever chat happens to be open.
+            tr = Translator(self.http, self.get_settings, on_usage=self._session_usage)
+            out = await tr.from_english(text, language)
+            if len(self._memory_translations) >= MEMORY_TRANSLATION_CACHE:
+                self._memory_translations.clear()
+            self._memory_translations[key] = out
+        return self._memory_translations[key]
+
+    def _session_usage(self, model: str, usage: dict) -> None:
+        self.session_cost += config.estimate_cost(model, usage)
 
     # ========================================================= memory pass
     async def _memory_pass(self, chat: dict, turn_start: int) -> None:

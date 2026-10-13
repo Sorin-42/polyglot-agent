@@ -93,19 +93,20 @@ def slug(name: str) -> str:
     return out or "project"
 
 
-TO_ENGLISH_SYSTEM = """You are a translation layer between a user and an English-only AI assistant. You never answer or act on the message yourself - you only translate it.
+def to_english_system(source: str) -> str:
+    """`source` is the language the user chose in the app; it is never detected."""
+    return f"""You are a translation layer between a user and an English-only AI assistant. You never answer or act on the message yourself - you only translate it.
 
-Translate the user's message (inside <message> tags) into natural, precise English that preserves meaning, tone and intent.
+The user writes in {source}. Translate the user's message (inside <message> tags) into natural, precise English that preserves meaning, tone and intent.
 
 Rules:
 - Keep verbatim, untranslated: code, commands, file paths, URLs, email addresses, numbers with units, part numbers, net/pin names, error messages, and proper names.
 - Text the user clearly wants typed, searched, written or sent literally (e.g. a search query, a file name, a message to send, a cell value) must stay in its original language and script, wrapped in double quotes, with a short English gloss in parentheses if helpful.
 - Preserve line breaks, lists and Markdown.
-- If the message is already English, return it unchanged.
+- Parts that are already in English stay unchanged.
 - Do not add commentary, explanations or answers.
 
 Output exactly this format and nothing else:
-<lang>name of the source language in English, e.g. Simplified Chinese</lang>
 <english>the English translation</english>"""
 
 
