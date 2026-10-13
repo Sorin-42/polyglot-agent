@@ -29,6 +29,7 @@ from .config import Settings
 from .local_tools import (EDITOR_NAME, EDITOR_WRITE_COMMANDS, POWERSHELL_TOOL, WINDOWS_TOOL,
                           describe_editor_write, folder_for, is_within, run_editor, run_powershell)
 from .memory_store import MemoryError_, MemoryStore
+from .overlay import ControlOverlay, control_label
 from .prompts import MEMORY_PASS_SYSTEM, MEMORY_TIDY_SYSTEM, agent_system_prompt, slug
 from .store import Store, new_id
 from .translator import StreamingTranslation, Translator, english_name
@@ -44,6 +45,10 @@ PRUNE_MAX_IMAGES = 40
 PRUNE_MAX_BYTES = 18_000_000
 PRUNE_KEEP = 8
 COMPUTER_READONLY = {"screenshot", "zoom", "cursor_position", "wait"}
+# Actions after which the on-screen "Claude" pointer moves to the cursor (and pulses on clicks).
+CLICK_ACTIONS = {"left_click", "right_click", "middle_click", "double_click", "triple_click",
+                 "left_mouse_down", "left_click_drag"}
+POINTER_ACTIONS = CLICK_ACTIONS | {"mouse_move", "left_mouse_up", "scroll"}
 USAGE_KEYS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")
 KEEP_THUMBS = 20
 MEMORY_TRANSLATION_CACHE = 200
@@ -102,6 +107,8 @@ class Session:
         self.approvals: dict[str, asyncio.Future] = {}
         self.pending_approvals: dict[str, dict] = {}
         self._memory_translations: dict[tuple[str, str], str] = {}
+        self.overlay: Optional[ControlOverlay] = None   # border, pointer, Esc-to-stop
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._live_translations: list[StreamingTranslation] = []
         self._translations: list[asyncio.Task] = []
         self._use_binding = True
@@ -186,6 +193,7 @@ class Session:
 
     async def stop(self) -> None:
         self.stop_event.set()
+        self._control_off()
         if self._stream_task and not self._stream_task.done():
             self._stream_task.cancel()
         for fut in self.approvals.values():
@@ -232,7 +240,38 @@ class Session:
 
     async def close(self) -> None:
         await self.stop()
+        if self.overlay is not None:
+            self.overlay.close()
         await self.http.aclose()
+
+    # ===================================================== control signal
+    def _control_on(self, computer: Any) -> None:
+        """The agent starts acting on the desktop: show the border and arm Esc-to-stop."""
+        if self.overlay is None:
+            self.overlay = ControlOverlay(on_escape=self._escape_pressed)
+        if self.overlay.active:
+            return
+        s = self.get_settings()
+        self._loop = asyncio.get_running_loop()
+        rect = getattr(computer, "_monitor_rect", lambda: None)()
+        self.overlay.show(rect, control_label(s.language), visible=s.control_indicator)
+
+    def _control_off(self) -> None:
+        if self.overlay is not None:
+            self.overlay.hide()
+
+    def _escape_pressed(self) -> None:
+        """Esc on the physical keyboard while the agent controls the computer (called
+        on the overlay thread): stop, just like the Stop button."""
+        self.stop_event.set()                    # aborts the action in progress at once
+        loop = self._loop
+        if loop is not None and not loop.is_closed():
+            loop.call_soon_threadsafe(lambda: loop.create_task(self._stop_by_escape()))
+
+    async def _stop_by_escape(self) -> None:
+        if self.busy:
+            await self.notice("Stopped: you pressed Esc.", "warn")
+        await self.stop()
 
     # ======================================================= folders
     def project(self) -> Optional[dict]:
@@ -460,6 +499,7 @@ class Session:
         except Exception as e:  # noqa: BLE001
             await self.notice(f"Unexpected error: {type(e).__name__}: {e}", "error")
         finally:
+            self._control_off()          # the agent is done acting on the desktop
             try:
                 await self.status("translating_out")
                 for t in list(self._translations):
@@ -620,6 +660,7 @@ class Session:
             if not (await self._approve("computer", f"{name} {json.dumps(_ui_input(inp), ensure_ascii=False)}"))["approve"]:
                 await self._action_done(item, False, "denied")
                 return "The user denied this action. Ask what they want instead.", True
+        self._control_on(computer)
         try:
             out = await asyncio.to_thread(computer.execute, name, inp)
         except UserAbort as e:
@@ -629,6 +670,8 @@ class Session:
         except ComputerError as e:
             await self._action_done(item, False, str(e))
             return f"Error: {e}", True
+        if name in POINTER_ACTIONS:
+            self.overlay.pointer(click=name in CLICK_ACTIONS)
         thumb = await asyncio.to_thread(thumbnail_b64, out["image"]) if out.get("image") is not None else ""
         text = " ".join(b.get("text", "") for b in out["content"] if b.get("type") == "text")
         await self._action_done(item, True, text, thumb)
@@ -669,6 +712,8 @@ class Session:
             if not (await self._approve("computer", f"focus window: {inp.get('title', '')}"))["approve"]:
                 await self._action_done(item, False, "denied")
                 return "The user denied this action.", True
+        if inp.get("action") == "focus":
+            self._control_on(self._get_computer())
         try:
             out = await asyncio.to_thread(self._get_computer().windows_tool, inp)
         except ComputerError as e:

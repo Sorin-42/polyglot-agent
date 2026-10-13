@@ -2,6 +2,19 @@
 
 All notable changes to Polyglot Agent. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-10-13
+
+### Added
+- **"Claude is using your computer" signal.** While the agent acts on the desktop, an orange border glows
+  around the controlled monitor with a label at the top (in Chinese when the app language is Chinese).
+- **Claude's pointer.** An orange ring with a "Claude" tag stays where the agent last pointed and pulses
+  when it clicks, so its pointer can be told apart from yours.
+- **Esc stops the agent.** A physical Esc press stops it like the Stop button and is not passed on to the
+  app. Esc keys the agent sends itself are injected input and are ignored.
+- The overlays are click-through, never take focus, are left out of the agent's window list and are
+  excluded from screen capture, so the agent never sees them. Settings → Tools can turn the visuals off;
+  Esc-to-stop stays on.
+
 ## [0.4.0] - 2026-10-13
 
 ### Added

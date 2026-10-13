@@ -87,6 +87,7 @@ class Settings:
     capture_mode: str = "window"           # window = focused window only; screen = work area
     max_screenshot_edge: int = 1568        # long edge sent to the model
     confirm_computer_actions: bool = False
+    control_indicator: bool = True         # border + Claude's pointer while it controls the PC
     shell_mode: str = "ask"                # PowerShell tool: ask / auto / off
     file_tools_mode: str = "ask"           # text editor writes: ask / auto / off
     web_search: bool = True

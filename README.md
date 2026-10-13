@@ -72,6 +72,8 @@ Your language is the one you chose in the top bar; the translator is told that l
 
 ## Safety: it controls your real mouse and keyboard
 
+- **You can always see when it is in control:** while the agent works on your desktop, an orange border glows around the screen with the label *Claude is using your computer · Press Esc to stop*, and an orange **Claude** pointer marks where it last pointed (it pulses when it clicks). Windows has a single real mouse pointer, so the real one still moves; the marker shows which moves are Claude's. These overlays are click-through, never take focus, and are hidden from screenshots, so the agent never sees them. Turn the visuals off in Settings → Tools.
+- **Esc** on your keyboard stops the agent at any time while it is in control, like the Stop button. Esc keys the agent sends itself (for example to close a menu) are ignored.
 - **Stop** button: halts the current action immediately, including mid-typing and mid-scroll.
 - **Fail-safe:** move the mouse into any screen corner and the next action aborts.
 - **PowerShell commands** and **file edits** need your approval by default (*ask*). You can set them to *auto* or *off*.

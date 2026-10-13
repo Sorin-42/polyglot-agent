@@ -4,10 +4,43 @@ import sys
 import tempfile
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 # isolate data dir for every test session
 os.environ.setdefault("POLYGLOT_DATA_DIR", tempfile.mkdtemp(prefix="polyglot-test-"))
+
+
+@pytest.fixture(autouse=True)
+def fake_overlay(monkeypatch):
+    """Never draw real overlay windows or install a keyboard hook during tests.
+    Returns the list of overlays the session created; each records its calls."""
+    import app.agent as agent_mod
+    made = []
+
+    class FakeOverlay:
+        def __init__(self, on_escape, **_):
+            self.on_escape, self.calls, self.active = on_escape, [], False
+            made.append(self)
+
+        def show(self, rect, label, visible=True):
+            self.active = True
+            self.calls.append(("show", label, visible))
+
+        def pointer(self, click=False):
+            self.calls.append(("pointer", click))
+
+        def hide(self):
+            if self.active:
+                self.active = False
+                self.calls.append(("hide",))
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(agent_mod, "ControlOverlay", FakeOverlay)
+    return made
 
 
 def sse(blocks, stop_reason="end_turn", model="claude-opus-5-5", chunk=7):
