@@ -215,3 +215,10 @@ fieldset label.check { flex-direction: row; align-items: center; gap: 8px; }
 .lang-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin: 10px 0; }
 .lang-grid button { padding: 10px 8px; font-size: 15px; }
 .lang-grid button:hover { border-color: var(--accent); }
+
+/* ---------- memory translation (read-only view) ---------- */
+.mem-view { flex: 1; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: 14px; }
+.mem-view[hidden], .mem-editor textarea[hidden] { display: none; }
+.mem-editor .row button { white-space: nowrap; flex-shrink: 0; }
+.mem-editor #memStatus { min-width: 0; }
+button:disabled { opacity: .5; cursor: not-allowed; }

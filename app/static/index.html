@@ -96,8 +96,10 @@
     <div class="mem-editor">
       <input id="memPath" class="mono" placeholder="/memories/notes.md">
       <textarea id="memText" class="mono" spellcheck="false"></textarea>
+      <div id="memView" class="md mem-view" hidden></div>
       <div class="row">
         <button id="memSave" class="primary" data-i18n="save">Save</button>
+        <button id="memTranslate" class="ghost" hidden>Translate</button>
         <button id="memDelete" class="danger ghost" data-i18n="delete">Delete</button>
         <span id="memStatus" class="muted small"></span>
       </div>

@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import copy
+import hashlib
 import io
 import json
 import threading
@@ -45,6 +46,7 @@ PRUNE_KEEP = 8
 COMPUTER_READONLY = {"screenshot", "zoom", "cursor_position", "wait"}
 USAGE_KEYS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")
 KEEP_THUMBS = 20
+MEMORY_TRANSLATION_CACHE = 200
 
 
 def _id() -> str:
@@ -93,6 +95,7 @@ class Session:
         self._memory_lock = asyncio.Lock()
         self.approvals: dict[str, asyncio.Future] = {}
         self.pending_approvals: dict[str, dict] = {}
+        self._memory_translations: dict[tuple[str, str], str] = {}
         self._live_translations: list[StreamingTranslation] = []
         self._translations: list[asyncio.Task] = []
         self._use_binding = True
@@ -747,6 +750,26 @@ class Session:
         out, err = await asyncio.to_thread(run_editor, inp)
         await self._action_done(item, not err, out if cmd != "view" else out[:400])
         return out + note, err
+
+    # ================================================== memory translation
+    async def translate_memory(self, text: str) -> str:
+        """One-click translation of memory text into the user's language, for reading
+        only. Memory stays English on disk (the agent reads it); nothing is written."""
+        language = english_name(self.get_settings().language)
+        if language in ("", "English") or not text.strip():
+            return text
+        key = (hashlib.sha256(text.encode("utf-8")).hexdigest(), language)
+        if key not in self._memory_translations:
+            # Counted in the session total, not in whichever chat happens to be open.
+            tr = Translator(self.http, self.get_settings, on_usage=self._session_usage)
+            out = await tr.from_english(text, language)
+            if len(self._memory_translations) >= MEMORY_TRANSLATION_CACHE:
+                self._memory_translations.clear()
+            self._memory_translations[key] = out
+        return self._memory_translations[key]
+
+    def _session_usage(self, model: str, usage: dict) -> None:
+        self.session_cost += config.estimate_cost(model, usage)
 
     # ========================================================= memory pass
     async def _memory_pass(self, chat: dict, turn_start: int) -> None:
