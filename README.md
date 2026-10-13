@@ -40,7 +40,7 @@ Translation happens only at the edges. The agent's transcript is append-only, an
 1. Unzip the folder anywhere, for example `Documents\polyglot-agent`.
 2. Double-click **`PolyglotAgent.exe`**.
    - **First launch only:** a console window installs the app's components into a private `.venv` folder, which takes about a minute. This needs Python 3.10 or newer, and the exe finds it automatically (python.org install, `py` launcher, PATH, or Anaconda/Miniconda). If none is found, it offers to open the Python download page.
-   - **Every launch after that:** no console. The app opens in its own window (Edge or Chrome app mode, no tabs or address bar).
+   - **Every launch after that:** no console. The app opens in its own window, built on WebView2: the Chromium engine that ships with Windows 10/11, so no browser is needed. In ⚙ Settings → *Window* you can switch to a Microsoft Edge or Google Chrome app window, or a tab in your default browser (e.g. Firefox, which has no app-window mode). The choice applies at the next launch. If WebView2 is missing, the app uses an Edge/Chrome window instead.
    - Closing the window quits the app. Launching it again while it's open brings the existing window to the front.
 3. Choose your language in the picker that appears (you can't send messages until you do).
 4. Open ⚙ Settings and paste your API key from https://platform.claude.com. Alternatively, set the `ANTHROPIC_API_KEY` environment variable before launching.
@@ -57,7 +57,7 @@ To get a single `PolyglotAgent.exe` you can copy to any PC without Python, build
 powershell -ExecutionPolicy Bypass -File tools\build_exe.ps1
 ```
 
-The result is `dist\PolyglotAgent.exe`, roughly 40–60 MB. The standalone exe keeps its data in `%LOCALAPPDATA%\PolyglotAgent`. You can also push this folder to GitHub and run the included **build-exe** Actions workflow, which builds the exe on a Windows runner.
+The result is `dist\PolyglotAgent.exe`, a single file you can copy to any Windows 10/11 PC: Python is inside it, and the window uses the WebView2 engine that Windows already has, so nothing else needs installing. The standalone exe keeps its data in `%LOCALAPPDATA%\PolyglotAgent`. The script builds with Python 3.13 (or 3.12/3.14) via the `py` launcher. You can also push this folder to GitHub and run the included **build-exe** Actions workflow, which builds the exe on a Windows runner.
 
 ### For developers
 
@@ -99,6 +99,8 @@ Tool and system-prompt changes take effect in the **next new chat**. Model and e
 ```
 PolyglotAgent.exe       windowed launcher (first run sets up .venv, then starts the app silently)
 launcher/               launcher source (C, built with MinGW: launcher/build.sh) and app icon
+tools/make_icons.py     renders the app icon at every size (pixel-sharp small sizes)
+tools/set_exe_icon.py   puts a new icon into an existing exe without recompiling
 tools/bootstrap.py      first-run setup used by the launcher
 tools/build_exe.ps1     builds the standalone single-file exe (PolyglotAgent.spec, PyInstaller)
 app/desktop.py          desktop entry: single instance, own app window, quits when closed

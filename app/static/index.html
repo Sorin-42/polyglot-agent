@@ -1,10 +1,13 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" translate="no">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__APP_NAME__</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23c96442'/%3E%3Cpath d='M9 11h14M9 16h9M9 21h12' stroke='white' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+<meta name="google" content="notranslate">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/icons/icon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png">
 <link rel="stylesheet" href="/static/style.css">
 <script>window.PA_TOKEN = "__TOKEN__";</script>
 <script src="/static/vendor/marked.min.js"></script>
@@ -13,7 +16,7 @@
 <body>
 <header class="topbar">
   <button id="btnSidebar" class="ghost icon-btn" title="Chats">☰</button>
-  <div class="brand"><span class="logo"></span><span>__APP_NAME__</span></div>
+  <div class="brand"><img class="logo" src="/static/icons/icon-192.png" alt=""><span>__APP_NAME__</span></div>
   <span id="crumb" class="crumb"></span>
   <label class="lang">
     <span data-i18n="language">Language</span>
@@ -164,6 +167,10 @@
         <label>File edits <select name="file_tools_mode"></select><small class="muted">Reading files asks once per folder.</small></label>
         <label class="check"><input type="checkbox" name="web_search"> Web search</label>
         <small class="muted" data-i18n="toolsNote">Tool changes apply to the next new chat.</small>
+      </fieldset>
+      <fieldset><legend data-i18n="windowLegend">Window</legend>
+        <label><span data-i18n="windowMode">Open the app in</span> <select name="window_mode"></select>
+          <small class="muted" data-i18n="windowNote">Applies the next time you start the app.</small></label>
       </fieldset>
       <fieldset><legend data-i18n="memory">Memory</legend>
         <label class="check"><input type="checkbox" name="memory_enabled"> Persistent memory</label>

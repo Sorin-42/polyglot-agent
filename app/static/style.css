@@ -33,6 +33,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid color-mix(in srgb
 .topbar { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--border); background: var(--panel); flex-wrap: wrap; }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; }
 .logo { width: 22px; height: 22px; border-radius: 6px; background: var(--accent); display: inline-block; }
+img.logo { background: none; }
 .lang { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
 .lang select { font-size: 14px; color: var(--text); }
 .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 3px 10px; border-radius: 999px; background: var(--panel-2); color: var(--muted); }

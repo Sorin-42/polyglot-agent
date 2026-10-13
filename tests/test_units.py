@@ -314,3 +314,40 @@ def test_memory_backup_clear_and_restore(tmp_path):
     for _ in range(12):
         m.backup("tidy")
     assert len(list(m.backups.iterdir())) == 10             # only the newest 10 are kept
+
+
+def test_window_mode_setting():
+    s = Settings()
+    assert s.window_mode == "app"
+    assert apply_updates(s, {"window_mode": "firefox"}).window_mode == "app"   # not an app-window mode
+    assert apply_updates(s, {"window_mode": "chrome"}).window_mode == "chrome"
+    assert apply_updates(s, {"window_mode": "browser"}).window_mode == "browser"
+
+
+def test_app_browser_preference_and_separate_profiles(monkeypatch, tmp_path):
+    import winreg
+    from app import desktop
+    if desktop.sys.platform != "win32":
+        pytest.skip("Windows only")
+
+    def no_registry(*a, **k):
+        raise OSError
+    monkeypatch.setattr(winreg, "OpenKey", no_registry)
+    for rel in (r"Microsoft\Edge\Application\msedge.exe", r"Google\Chrome\Application\chrome.exe"):
+        (tmp_path / rel).parent.mkdir(parents=True)
+        (tmp_path / rel).write_text("")
+    for env in ("PROGRAMFILES(X86)", "PROGRAMFILES", "LOCALAPPDATA"):
+        monkeypatch.setenv(env, str(tmp_path))
+    assert desktop.find_app_browser("chrome").endswith("chrome.exe")
+    assert desktop.find_app_browser("edge").endswith("msedge.exe")
+    (tmp_path / r"Google\Chrome\Application\chrome.exe").unlink()
+    assert desktop.find_app_browser("chrome").endswith("msedge.exe")      # falls back to Edge
+
+    launched = []
+    monkeypatch.setattr(desktop.config, "DATA_DIR", tmp_path / "data")
+    monkeypatch.setattr(desktop.subprocess, "Popen", lambda args: launched.append(args) or "proc")
+    for exe in ("C:/x/chrome.exe", "C:/x/msedge.exe"):
+        monkeypatch.setattr(desktop, "find_app_browser", lambda prefer, exe=exe: exe)
+        assert desktop._open_app_window("http://127.0.0.1:1/", "chrome") == "proc"
+    profiles = [next(a for a in args if a.startswith("--user-data-dir=")) for args in launched]
+    assert profiles[0].endswith("window-profile-chrome") and profiles[1].endswith("window-profile")

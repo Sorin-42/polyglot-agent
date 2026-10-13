@@ -2,6 +2,26 @@
 
 All notable changes to Polyglot Agent. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-10-13
+
+### Added
+- **Built-in app window (WebView2).** The app now opens in its own window on WebView2, the Chromium
+  engine that ships with Windows 10/11, with its own taskbar button and icon. No Edge/Chrome needed,
+  and no browser profile folder in `data/`.
+- **Window choice** in Settings → Window: built-in window, Microsoft Edge window, Google Chrome window,
+  or a default-browser tab (e.g. Firefox). Applies at the next launch. Edge and Chrome each get their
+  own private profile. Falls back to Edge/Chrome when WebView2 or pywebview is unavailable.
+- `tools/make_icons.py` and `tools/set_exe_icon.py` to regenerate the icon and update the launcher exe.
+
+### Changed
+- **Sharper icon.** Every size from 16 to 256 px is drawn on its own pixel grid, so small icons
+  (taskbar, title bar, Explorer) are crisp instead of blurry. The page uses PNG favicons and the
+  top-bar logo uses the same icon.
+- The page is marked `notranslate`, so Chrome/Edge no longer offer to translate the app.
+- The standalone exe includes the WebView2 window. `tools/build_exe.ps1` picks Python 3.13/3.12/3.14
+  through the `py` launcher instead of whatever `python` is on PATH.
+- New dependency: `pywebview` (the first launch after updating reinstalls components once).
+
 ## [0.3.0] - 2026-10-13
 
 ### Added
