@@ -5,13 +5,17 @@ local folder and refuse anything that would escape it.
 """
 from __future__ import annotations
 
+import datetime
 import shutil
 import urllib.parse
 from pathlib import Path
+from typing import Optional
 
 ROOT = "/memories"
 MAX_FILE_BYTES = 256 * 1024
 MAX_VIEW_CHARS = 16_000
+MAX_BACKUPS = 10
+_STAMP = "%Y%m%d-%H%M%S-%f"
 
 
 class MemoryError_(Exception):
@@ -27,9 +31,11 @@ def _human(n: int) -> str:
 
 
 class MemoryStore:
-    def __init__(self, base_dir: Path):
+    def __init__(self, base_dir: Path, backup_dir: Optional[Path] = None):
         self.base = Path(base_dir).resolve()
         self.base.mkdir(parents=True, exist_ok=True)
+        # Backups live next to /memories, never inside it, so the agent can't see them.
+        self.backups = Path(backup_dir) if backup_dir else self.base.parent / f"{self.base.name}-backups"
 
     # ------------------------------------------------------------------ paths
     def resolve(self, vpath: str) -> Path:
@@ -219,3 +225,62 @@ class MemoryStore:
                 budget -= len(txt)
                 parts.append(f"\n--- {ROOT}/{name} ---\n{txt}")
         return "\n".join(parts)
+
+    def dump(self, max_chars: int = 60_000) -> str:
+        """Every memory file with its content, for a clean-up pass."""
+        parts = []
+        for f in self.tree():
+            text = self.resolve(f["path"]).read_text(encoding="utf-8", errors="replace")
+            parts.append(f'<file path="{f["path"]}">\n{text}\n</file>')
+        out = "\n\n".join(parts)
+        if len(out) > max_chars:
+            out = out[:max_chars] + "\n...[truncated; view the remaining files with the memory tool]"
+        return out
+
+    # ----------------------------------------------------------------- backups
+    def backup(self, kind: str) -> dict:
+        """Copy all memory files aside before a clean-up, so it can be undone."""
+        self.backups.mkdir(parents=True, exist_ok=True)
+        dest = self.backups / f"{datetime.datetime.now().strftime(_STAMP)}_{kind}"
+        shutil.copytree(self.base, dest)
+        for old in self._backup_dirs()[:-MAX_BACKUPS]:
+            shutil.rmtree(old, ignore_errors=True)
+        return self._backup_info(dest)
+
+    def latest_backup(self) -> Optional[dict]:
+        dirs = self._backup_dirs()
+        return self._backup_info(dirs[-1]) if dirs else None
+
+    def clear(self) -> None:
+        """Delete every memory file and folder (the /memories root itself stays)."""
+        for child in self.base.iterdir():
+            if child.is_dir():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+
+    def restore_latest(self) -> Optional[dict]:
+        """Undo the last clean-up: put the newest backup back and drop it."""
+        dirs = self._backup_dirs()
+        if not dirs:
+            return None
+        info = self._backup_info(dirs[-1])
+        self.clear()
+        shutil.copytree(dirs[-1], self.base, dirs_exist_ok=True)
+        shutil.rmtree(dirs[-1], ignore_errors=True)
+        return info
+
+    def _backup_dirs(self) -> list[Path]:
+        if not self.backups.is_dir():
+            return []
+        return sorted(d for d in self.backups.iterdir() if d.is_dir() and "_" in d.name)
+
+    @staticmethod
+    def _backup_info(d: Path) -> dict:
+        stamp, _, kind = d.name.partition("_")
+        try:
+            when = datetime.datetime.strptime(stamp, _STAMP).timestamp()
+        except ValueError:
+            when = d.stat().st_mtime
+        files = sum(1 for f in d.rglob("*") if f.is_file())
+        return {"id": d.name, "kind": kind, "time": when, "files": files}

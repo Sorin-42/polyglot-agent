@@ -93,3 +93,81 @@ def test_memory_translation_is_read_only_and_cached():
         got = c.get("/api/memory/file", headers=h, params={"path": "/memories/likes.md"}).json()
         assert got["content"] == "- likes tea"
         assert c.post("/api/memory/translate", json={"content": "x"}).status_code == 403
+
+
+def _memory_files(c, h):
+    return sorted(f["path"] for f in c.get("/api/memory", headers=h).json()["files"])
+
+
+def test_memory_clear_and_undo():
+    h = {"X-Token": server.TOKEN}
+    with TestClient(server.app, base_url="http://127.0.0.1:8765") as c:
+        c.put("/api/memory/file", headers=h, json={"path": "/memories/clean/a.md", "content": "- a"})
+        before = _memory_files(c, h)
+        r = c.post("/api/memory/clear", headers=h).json()
+        assert r["backup"]["kind"] == "clear" and r["undo"]["id"] == r["backup"]["id"]
+        assert _memory_files(c, h) == []
+        assert c.get("/api/memory", headers=h).json()["undo"]["kind"] == "clear"
+        r = c.post("/api/memory/undo", headers=h).json()
+        assert r["restored"]["kind"] == "clear"
+        assert _memory_files(c, h) == before
+        assert c.post("/api/memory/undo", headers=h).status_code == 404    # nothing left to undo
+        server.state.session.memory_maintenance = True
+        try:
+            assert c.post("/api/memory/clear", headers=h).status_code == 409
+            assert c.post("/api/memory/tidy", headers=h).status_code == 409
+        finally:
+            server.state.session.memory_maintenance = False
+        assert c.post("/api/memory/clear").status_code == 403
+        c.delete("/api/memory/file", headers=h, params={"path": "/memories/clean"})
+
+
+def test_memory_tidy_edits_and_rolls_back_on_failure():
+    h = {"X-Token": server.TOKEN}
+    fail = {"on": False}
+    calls = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        calls.append(body)
+        last = body["messages"][-1]
+        if isinstance(last["content"], list):          # a tool result came back
+            if fail["on"]:
+                return httpx.Response(400, json={"type": "error", "error": {
+                    "type": "invalid_request_error", "message": "boom"}})
+            return httpx.Response(200, headers={"content-type": "text/event-stream"},
+                                  content=sse([{"type": "text", "text": "DONE: merged duplicate lines"}]))
+        assert "<memory>" in last["content"] and "- likes tea\n- likes tea" in last["content"]
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=sse(
+            [{"type": "tool_use", "id": "toolu_t1", "name": "memory", "input": {
+                "command": "str_replace", "path": "/memories/tidy.md",
+                "old_str": "- likes tea\n- likes tea", "new_str": "- likes tea"}}], "tool_use"))
+
+    with TestClient(server.app, base_url="http://127.0.0.1:8765") as c:
+        server.state.session.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        c.post("/api/settings", headers=h, json={"language": "English", "api_key": "sk-test"})
+        for p in _memory_files(c, h):
+            c.delete("/api/memory/file", headers=h, params={"path": p})
+        c.put("/api/memory/file", headers=h, json={"path": "/memories/tidy.md", "content": "- likes tea\n- likes tea"})
+
+        # the edit fails half-way: memory is put back exactly as it was
+        fail["on"] = True
+        r = c.post("/api/memory/tidy", headers=h)
+        assert r.status_code == 502 and "restored" in r.json()["error"]
+        assert c.get("/api/memory/file", headers=h, params={"path": "/memories/tidy.md"}).json()["content"] \
+            == "- likes tea\n- likes tea"
+        assert c.get("/api/memory", headers=h).json()["undo"] is None
+
+        # it succeeds: the file is tidied, and the tidy-up can be undone
+        fail["on"] = False
+        r = c.post("/api/memory/tidy", headers=h)
+        assert r.status_code == 200, r.text
+        j = r.json()
+        assert j["summary"] == "merged duplicate lines" and j["backup"]["kind"] == "tidy"
+        assert c.get("/api/memory/file", headers=h, params={"path": "/memories/tidy.md"}).json()["content"] \
+            == "- likes tea"
+        assert all(b["model"] == "claude-haiku-5-5" for b in calls)
+        c.post("/api/memory/undo", headers=h)
+        assert c.get("/api/memory/file", headers=h, params={"path": "/memories/tidy.md"}).json()["content"] \
+            == "- likes tea\n- likes tea"
+        c.delete("/api/memory/file", headers=h, params={"path": "/memories/tidy.md"})

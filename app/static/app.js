@@ -34,6 +34,11 @@ const STR = {
     choose: "Choose…",
     translateMem: "Translate", showOriginal: "Show original", translatingMem: "Translating…",
     memTranslatedNote: "Translation for reading only. Memory is stored in English for the agent; switch to the original to edit.",
+    tidyMem: "Tidy up", tidyingMem: "Tidying…", clearMem: "Clear all", undoClean: "Undo",
+    undoTitle: "Restore memory from before the last tidy-up or clear",
+    memTidied: "Memory tidied", memCleared: "Memory cleared", memRestored: "Memory restored",
+    memCleanNote: "New chats use this memory; chats already started keep the memory they began with.",
+    memBusy: "Wait until the current request and memory update have finished, then try again.",
     newProject: "New project", projects: "Projects", randomChats: "Random chats", project: "Project",
     projectName: "Name", projectInstructions: "Instructions for the agent (optional)",
     instructionsHint: "e.g. 4-layer board, JLCPCB rules, KiCad 9. Answer with metric units.",
@@ -74,6 +79,11 @@ const STR = {
     choose: "请选择…",
     translateMem: "翻译", showOriginal: "显示原文", translatingMem: "翻译中…",
     memTranslatedNote: "译文仅供阅读。记忆以英文保存供智能体使用；如需编辑请切换到原文。",
+    tidyMem: "整理", tidyingMem: "整理中…", clearMem: "全部清除", undoClean: "撤销",
+    undoTitle: "恢复到上次整理或清除之前的记忆",
+    memTidied: "记忆已整理", memCleared: "记忆已清除", memRestored: "记忆已恢复",
+    memCleanNote: "新对话会使用这份记忆；已开始的对话仍保留开始时的记忆。",
+    memBusy: "请等当前请求和记忆更新完成后再试。",
     newProject: "新项目", projects: "项目", randomChats: "随手聊", project: "项目",
     projectName: "名称", projectInstructions: "给智能体的说明（可选）",
     instructionsHint: "例如：四层板、嘉立创工艺、KiCad 9，回答使用公制单位。",
@@ -116,7 +126,7 @@ async function api(method, path, body) {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || r.statusText);
+  if (!r.ok) { const e = new Error(j.error || r.statusText); e.status = r.status; throw e; }
   return j;
 }
 function el(tag, cls, text) {
@@ -860,6 +870,8 @@ async function loadMemory(flashPath) {
     list.appendChild(li);
   });
   if (flashPath && flashPath === memCurrent) openMemFile(memCurrent);
+  memUndoInfo = j.undo || null; renderMemUndo();
+  return j;
 }
 async function openMemFile(path) {
   try {
@@ -920,6 +932,45 @@ $("memDelete").onclick = () => twoClick($("memDelete"), t("delete"), async () =>
     memCurrent = ""; $("memText").value = ""; $("memPath").value = ""; applyMemView(); loadMemory();
   } catch (err) { $("memStatus").textContent = err.message; }
 });
+
+/* Clean-up: "Tidy up" (AI merges duplicates, drops stale lines) and "Clear all".
+   The server backs memory up before either, and "Undo" puts the last backup back. */
+let memUndoInfo = null;
+function renderMemUndo() {
+  const b = $("memUndo");
+  b.hidden = !memUndoInfo;
+  if (memUndoInfo) b.title = `${t("undoTitle")} (${new Date(memUndoInfo.time * 1000).toLocaleString()})`;
+}
+function memBanner(text, isError, note) {
+  const b = $("memBanner");
+  b.replaceChildren(el("span", "", text || ""));
+  if (note) b.appendChild(el("div", "muted small", note));
+  b.hidden = !text; b.classList.toggle("error", !!isError);
+}
+async function memClean(btn, path, busyLabel, doneText) {
+  const btns = [$("memUndo"), $("memTidy"), $("memClear")];
+  const label = btn.textContent;
+  btns.forEach((b) => (b.disabled = true));
+  btn.textContent = busyLabel; memBanner("");
+  try {
+    const j = await api("POST", path);
+    memBanner(doneText(j), false, t("memCleanNote"));
+    const tree = await loadMemory();
+    if (memCurrent && !tree.files.some((f) => f.path === memCurrent)) {
+      memCurrent = ""; $("memPath").value = ""; $("memText").value = ""; applyMemView();
+    } else if (memCurrent) openMemFile(memCurrent);
+  } catch (err) {
+    memBanner(err.status === 409 ? t("memBusy") : err.message, true);
+  } finally {
+    btn.textContent = label;
+    btns.forEach((b) => (b.disabled = false));
+  }
+}
+$("memTidy").onclick = () => memClean($("memTidy"), "/api/memory/tidy", t("tidyingMem"),
+  (j) => `${t("memTidied")}: ${j.summary}`);
+$("memClear").onclick = () => twoClick($("memClear"), t("clearMem"),
+  () => memClean($("memClear"), "/api/memory/clear", t("clearMem"), () => t("memCleared")));
+$("memUndo").onclick = () => memClean($("memUndo"), "/api/memory/undo", t("undoClean"), () => t("memRestored"));
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {

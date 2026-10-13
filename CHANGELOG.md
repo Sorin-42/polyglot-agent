@@ -2,6 +2,19 @@
 
 All notable changes to Polyglot Agent. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-10-13
+
+### Added
+- **Memory clean-up** in the Memory panel:
+  - **Tidy up**: the memory reviewer model merges duplicate facts and files, drops outdated,
+    contradicted or one-off lines and any secrets, and keeps everything still useful. The result
+    summary is shown in your language. If it fails part-way, memory is restored automatically.
+  - **Clear all** (with a confirm click) deletes every memory file.
+  - **Undo** restores memory from before the last tidy-up or clear. Backups are kept in
+    `data/memories-backups` (the newest 10), outside the folder the agent can see.
+  - Clean-up is refused while the agent is working or updating memory, and new messages wait while a
+    tidy-up runs. Its token cost counts toward the session total.
+
 ## [0.2.2] - 2026-10-13
 
 ### Fixed
