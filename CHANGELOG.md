@@ -2,6 +2,16 @@
 
 All notable changes to Polyglot Agent. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.2.2] - 2026-10-13
+
+### Fixed
+- **Reopening the app showed "127.0.0.1 refused to connect".** Closing the window could leave the old
+  process alive with its server already stopped: the web server waited forever for a dropped connection
+  to close. The process kept the single-instance lock, so every relaunch reopened the dead address.
+  Shutdown now gives connections 3 seconds, the process is always ended (a 15-second watchdog covers
+  any other hang), and a relaunch during shutdown waits for the old copy and then starts normally.
+- A second launch no longer wipes `data/app.log` of the running copy.
+
 ## [0.2.1] - 2026-10-13
 
 ### Changed
