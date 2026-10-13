@@ -8,7 +8,8 @@ from app.api import APIError, StreamAccumulator, stream_message
 from app.computer import compute_scale
 from app.keys import parse_combo, parse_key_sequence, parse_modifiers
 from app.memory_store import MemoryError_, MemoryStore
-from app.translator import StreamingTranslation, is_pure_code, looks_english
+from app.config import LANGUAGES, Settings, apply_updates
+from app.translator import StreamingTranslation, Translator, is_pure_code
 from conftest import sse
 
 
@@ -171,12 +172,40 @@ def test_stream_message_auth_error_not_retried():
 
 
 # -------------------------------------------------------------- translator
-def test_looks_english():
-    assert looks_english("Please open the schematic and fix the footprint")
-    assert looks_english("ok")
-    assert not looks_english("帮我打开浏览器")
-    assert not looks_english("¿Dónde está el archivo?")
-    assert not looks_english("bonjour je voudrais ouvrir le fichier de configuration maintenant")
+def test_language_is_chosen_never_detected():
+    # no auto-detect option; the old "auto" value and unknown names are rejected
+    assert "auto" not in LANGUAGES
+    s = Settings()
+    assert s.language == ""
+    assert apply_updates(s, {"language": "auto"}).language == ""
+    assert apply_updates(s, {"language": "Klingon"}).language == ""
+    assert apply_updates(s, {"language": "日本語"}).language == "日本語"
+
+
+def test_to_english_uses_the_chosen_language():
+    systems = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        systems.append(body["system"])
+        return httpx.Response(200, headers={"content-type": "text/event-stream"},
+                              content=sse([{"type": "text", "text": "<english>Open the file</english>"}]))
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            tr = Translator(http, lambda: Settings(api_key="k"))
+            return (await tr.to_english("打开文件", "简体中文"),
+                    await tr.to_english("open the file", "English"),
+                    await tr.to_english("12 + 3", "简体中文"),
+                    # English typed while Spanish is chosen still goes to the translator
+                    await tr.to_english("ok", "Español"))
+
+    out = asyncio.run(run())
+    assert out[:3] == ("Open the file", "open the file", "12 + 3")
+    assert len(systems) == 2      # English and letter-free input never call the translator
+    assert "The user writes in Simplified Chinese." in systems[0]
+    assert "The user writes in Spanish." in systems[1]
+    assert all("<lang>" not in s for s in systems)
 
 
 def test_streaming_translation_chunks_in_order_and_skips_code():

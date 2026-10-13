@@ -45,8 +45,9 @@ CONTEXT_WINDOWS = {
 DEFAULT_CONTEXT_WINDOW = 200_000
 CAPTURE_MODES = ["window", "screen"]
 
+# The user picks one of these; the app never guesses the language from their text.
 LANGUAGES = [
-    "auto", "English", "简体中文", "繁體中文", "日本語", "한국어", "Español", "Français",
+    "English", "简体中文", "繁體中文", "日本語", "한국어", "Español", "Français",
     "Deutsch", "Italiano", "Português", "Русский", "العربية", "हिन्दी", "Tiếng Việt",
     "ไทย", "Bahasa Indonesia", "Türkçe", "Polski", "Nederlands", "Українська",
 ]
@@ -73,7 +74,7 @@ class Settings:
     max_steps: int = 80                    # model calls per user turn
     show_thinking: bool = True             # request summarized thinking
     # translation layer
-    language: str = "auto"                 # "auto" = detect per message
+    language: str = ""                     # chosen by the user; "" = not chosen yet
     translator_model: str = "claude-haiku-5-5"
     translator_effort: str = "low"
     show_original: bool = False            # show English under translations
@@ -147,6 +148,8 @@ def apply_updates(s: Settings, updates: dict) -> Settings:
             continue
         if k == "capture_mode" and v not in CAPTURE_MODES:
             continue
+        if k == "language" and v not in LANGUAGES:
+            continue  # also drops the old "auto" value, so the user is asked to choose
         if k == "api_key" and v == "":
             continue  # empty field in the UI means "keep current"
         setattr(s, k, v)

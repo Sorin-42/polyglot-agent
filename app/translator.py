@@ -5,6 +5,9 @@ user text --(to_english)--> English --> main agent --> English --(StreamingTrans
 The main agent only ever sees English, so its reasoning, tool use and memory
 stay in one language. Replies are translated paragraph-by-paragraph while the
 agent is still writing, which keeps the conversation feeling live.
+
+The user's language is always the one they chose in the app; it is never
+detected from their text.
 """
 from __future__ import annotations
 
@@ -16,49 +19,15 @@ import httpx
 
 from .api import APIError, stream_message
 from .config import LANGUAGE_ENGLISH_NAME, Settings
-from .prompts import TO_ENGLISH_SYSTEM, from_english_system
+from .prompts import from_english_system, to_english_system
 
 UsageCallback = Callable[[str, dict], None]
-
-# English function words (strong signal) vs. function words of other Latin-script
-# languages. Loanwords like "file"/"folder" and ambiguous short words ("a", "no",
-# "in", "me") count for neither side.
-_EN_WORDS = set("""the is are was were be been being to of and or on at for with from by this that these
-those it its i you he she we they my your our their him her us them does did not yes can could would should
-will shall may might must have has had what which who whom whose when where why how please there here just
-about into than then because if while after before again only very some any each every all""".split())
-
-_FOREIGN_WORDS = set("""de la el los las que se es por para con una del al lo le les des et est pas je tu
-nous vous ist der das und nicht ich sie wir ein eine het een van ik niet zijn dat yang saya dan ini itu
-tidak ke dari akan untuk che non per sono della il não você eu em um uma och jag att är på ett
-bitte kannst können mein meine wie warum favor ayuda archivo carpeta abre abrir fichier dossier ouvre
-donde dónde como cómo quiero puedes hacer esto esta mi hola gracias bonjour merci hallo danke ciao
-obrigado voglio puoi questo kan jij wil apa bisa tolong buka""".split())
 
 _FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 
 
 def english_name(language: str) -> str:
     return LANGUAGE_ENGLISH_NAME.get(language, language)
-
-
-def looks_english(text: str) -> bool:
-    """Cheap heuristic so obviously-English input skips a translation call."""
-    t = text.strip()
-    if not t:
-        return True
-    if any(ord(c) > 127 for c in t if c.isalpha()):
-        return False
-    words = re.findall(r"[A-Za-z']+", t.lower())
-    if not words:
-        return True  # code, numbers, paths ...
-    foreign = sum(1 for w in words if w in _FOREIGN_WORDS)
-    hits = sum(1 for w in words if w in _EN_WORDS)
-    if foreign and foreign >= hits:
-        return False
-    if len(words) <= 2:
-        return True
-    return hits >= 1 and hits / len(words) >= 0.15
 
 
 def is_pure_code(chunk: str) -> bool:
@@ -124,27 +93,15 @@ class Translator:
         return "".join(b.get("text", "") for b in msg["content"] if b.get("type") == "text")
 
     # ------------------------------------------------------------ inbound
-    async def to_english(self, text: str, language: str) -> tuple[str, str]:
-        """Returns (english_text, detected_language_name)."""
-        if not text.strip():
-            return text, english_name(language) if language != "auto" else "English"
-        if language == "English":
-            return text, "English"
-        # In auto mode, skip the call for obviously-English input. With an explicit
-        # non-English language, always translate (the heuristic can't be trusted
-        # with short Latin-script messages).
-        if language == "auto" and looks_english(text):
-            return text, "English"
-        if not re.search(r"[^\W\d_]", text):
-            return text, english_name(language) if language != "auto" else "English"
-        raw = await self._call(TO_ENGLISH_SYSTEM, f"<message>\n{text}\n</message>", 8000)
-        m_lang = re.search(r"<lang>(.*?)</lang>", raw, re.S)
+    async def to_english(self, text: str, language: str) -> str:
+        """Translate from the user's chosen language (a UI label such as "简体中文")."""
+        source = english_name(language)
+        if source in ("", "English") or not re.search(r"[^\W\d_]", text):
+            return text  # English, or nothing to translate (code, numbers, paths ...)
+        raw = await self._call(to_english_system(source), f"<message>\n{text}\n</message>", 8000)
         m_en = re.search(r"<english>(.*?)(?:</english>|$)", raw, re.S)
         english = (m_en.group(1) if m_en else raw).strip()
-        detected = (m_lang.group(1).strip() if m_lang else "") or "English"
-        if language != "auto":
-            detected = english_name(language)
-        return english or text, detected
+        return english or text
 
     # ----------------------------------------------------------- outbound
     async def from_english(self, text: str, target: str,

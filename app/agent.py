@@ -163,6 +163,11 @@ class Session:
         if self.busy:
             await self.notice("Still working on the previous request - press Stop first.", "warn")
             return
+        if not self.get_settings().language:
+            # The language is never guessed: the user picks it in the app first.
+            await self.emit({"type": "notice", "id": _id(), "level": "warn",
+                             "text": "Choose your language first (top bar)."})
+            return
         self.stop_event.clear()
         self.turn_task = asyncio.create_task(self._turn(text, images))
 
@@ -397,18 +402,15 @@ class Session:
         self._pending_notice = ""
         self._translations = []
         try:
-            # ---- 1. translate the user's message into English
+            # ---- 1. translate the user's message into English (from the language they chose)
+            language = english_name(s.language)
             await self.status("translating_in")
             try:
-                english, detected = await self.translator.to_english(text, s.language)
+                english = await self.translator.to_english(text, s.language)
             except APIError as e:
                 await self.notice(f"Translation failed ({e.message}); sending the original text.", "warn")
-                english, detected = text, english_name(s.language) if s.language != "auto" else "English"
-            if s.language != "auto":
-                chat["reply_language"] = english_name(s.language)
-            elif not (detected == "English" and len(text.split()) <= 3 and self.display):
-                # a short "ok"/"thanks" keeps replying in the language already in use
-                chat["reply_language"] = detected
+                english = text
+            chat["reply_language"] = language
             if not chat["title"]:
                 chat["title"] = " ".join(text.split())[:60] or "Image"
 
@@ -419,7 +421,7 @@ class Session:
                     img_blocks.append(prepared[0])
                     thumbs.append(prepared[1])
             uitem = self._store({"type": "user", "id": _id(), "original": text, "english": english,
-                                 "lang": detected, "images": thumbs,
+                                 "lang": language, "images": thumbs,
                                  "translated": english.strip() != text.strip()})
             await self.emit({**uitem, "type": "user_message"})
 

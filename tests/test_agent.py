@@ -67,7 +67,8 @@ def test_full_turn_translates_and_keeps_agent_english(monkeypatch):
             kinds.append("to_en")
             assert body["model"] == "claude-haiku-5-5"
             assert body["thinking"] == {"type": "disabled"}
-            return _stream([{"type": "text", "text": "<lang>Simplified Chinese</lang>\n<english>Take a "
+            assert "The user writes in Simplified Chinese." in system   # chosen, not detected
+            return _stream([{"type": "text", "text": "<english>Take a "
                                                      "screenshot and tell me what is on the screen.</english>"}])
         if system.startswith("You are a translation layer. Translate"):
             kinds.append("from_en")
@@ -179,6 +180,29 @@ def test_shell_denied_and_english_needs_no_translation(monkeypatch):
     ap = next(e for e in events if e["type"] == "approval_request")
     assert ap["kind"] == "shell" and "Remove-Item" in ap["detail"]
     assert any(e["type"] == "assistant_final" and "did not delete" in e["english"] for e in events)
+
+
+def test_no_request_until_language_is_chosen(monkeypatch):
+    monkeypatch.setattr(agent_mod, "LocalComputer", FakeComputer)
+    calls, events = [], []
+
+    def handler(request):
+        calls.append(request)
+        return _stream([{"type": "text", "text": "x"}])
+
+    settings = Settings(api_key="sk-test")          # language not chosen yet
+    settings._auto_answer = True
+
+    async def run():
+        sess = make_session(settings, handler, events)
+        await sess.submit("你好", [])
+        busy = sess.busy
+        await sess.close()
+        return busy, sess.messages
+
+    busy, messages = asyncio.run(run())
+    assert not busy and messages == [] and calls == []
+    assert any(e["type"] == "notice" and "language" in e["text"] for e in events)
 
 
 def test_api_error_rolls_back_user_message(monkeypatch):
