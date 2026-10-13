@@ -266,6 +266,23 @@ def test_window_frame_coordinate_mapping():
     assert c.capture_mode == "screen"
 
 
+def test_desktop_detects_a_dead_previous_instance(monkeypatch, tmp_path):
+    import socket
+    from app import desktop
+    monkeypatch.setattr(desktop.config, "DATA_DIR", tmp_path)
+    assert not desktop._server_alive()                     # no running.json
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    s.listen(1)
+    port = s.getsockname()[1]
+    (tmp_path / "running.json").write_text(json.dumps({"url": f"http://127.0.0.1:{port}/", "pid": 1}))
+    try:
+        assert desktop._server_alive()                     # server answering
+    finally:
+        s.close()
+    assert not desktop._server_alive()                     # process left, server gone
+
+
 def test_desktop_free_port_falls_back_when_busy():
     import socket
     from app.desktop import free_port

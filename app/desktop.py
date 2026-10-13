@@ -16,6 +16,8 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
+import urllib.parse
 import webbrowser
 from pathlib import Path
 from typing import Optional
@@ -25,6 +27,11 @@ from .computer import enable_dpi_awareness
 
 MUTEX_NAME = "Local\\PolyglotAgent.SingleInstance"
 IDLE_EXIT_SECONDS = 120
+# uvicorn waits forever for open connections by default; on Windows a dropped
+# connection can stay "open" to asyncio, which left a process with no server
+# but still holding the single-instance lock, so relaunching opened a dead URL.
+SHUTDOWN_GRACE_SECONDS = 3
+FORCE_EXIT_SECONDS = 15        # hard stop if shutdown still hangs anywhere
 _mutex_handle = None
 
 
@@ -60,6 +67,57 @@ def _first_instance() -> bool:
     k32.CreateMutexW.restype = ctypes.c_void_p
     _mutex_handle = k32.CreateMutexW(None, False, MUTEX_NAME)
     return k32.GetLastError() != 183  # ERROR_ALREADY_EXISTS
+
+
+def _server_alive() -> bool:
+    """True if the running instance's server accepts connections."""
+    try:
+        info = json.loads((config.DATA_DIR / "running.json").read_text(encoding="utf-8"))
+        port = urllib.parse.urlsplit(info["url"]).port
+        with socket.create_connection(("127.0.0.1", port), timeout=1):
+            return True
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+
+
+def _wait_for_previous_exit(timeout: float = FORCE_EXIT_SECONDS + 5) -> bool:
+    """The other instance holds the lock but its server is gone, so it is still
+    shutting down. Wait for it to release the lock; True once we are first."""
+    import ctypes
+    k32 = ctypes.windll.kernel32
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        k32.CloseHandle(ctypes.c_void_p(_mutex_handle))
+        time.sleep(0.5)
+        if _first_instance():
+            return True
+    return False
+
+
+def _hard_exit() -> None:
+    """End the process now: also stops worker threads that would otherwise keep it
+    (and the single-instance lock) alive, e.g. a PowerShell command still running."""
+    try:
+        (config.DATA_DIR / "running.json").unlink()
+    except OSError:
+        pass
+    for f in (sys.stdout, sys.stderr):
+        try:
+            f.flush()
+        except Exception:  # noqa: BLE001
+            pass
+    os._exit(0)
+
+
+def _request_exit(srv) -> None:
+    """Stop the server; if shutdown hangs anyway, force the process to end."""
+    srv.should_exit = True
+
+    def force() -> None:
+        time.sleep(FORCE_EXIT_SECONDS)
+        print("Shutdown took too long; forcing exit.", flush=True)
+        _hard_exit()
+    threading.Thread(target=force, daemon=True).start()
 
 
 def _focus_existing() -> None:
@@ -128,7 +186,7 @@ def _watch(srv, url: str, force_browser: bool) -> None:
         t0 = time.time()
         proc.wait()
         if time.time() - t0 > 5:      # the user closed the app window
-            srv.should_exit = True
+            _request_exit(srv)
             return
         # The browser handed off to an existing process; fall back to idle watching.
     else:
@@ -140,7 +198,7 @@ def _watch(srv, url: str, force_browser: bool) -> None:
         if server.hub.sockets or (sess is not None and sess.busy):
             idle_since = time.time()
         elif time.time() - idle_since > IDLE_EXIT_SECONDS:
-            srv.should_exit = True
+            _request_exit(srv)
 
 
 def main() -> None:
@@ -149,11 +207,14 @@ def main() -> None:
     ap.add_argument("--browser", action="store_true", help="use the default browser instead of an app window")
     args, _ = ap.parse_known_args()
 
-    _redirect_output()
     enable_dpi_awareness()
     if not _first_instance():
-        _focus_existing()
-        return
+        # Running and reachable: bring it to the front. Server gone: the previous
+        # instance is still closing, so wait for it and then start normally.
+        if _server_alive() or not _wait_for_previous_exit():
+            _focus_existing()
+            return
+    _redirect_output()   # only the instance that runs may truncate app.log
 
     import uvicorn
 
@@ -161,11 +222,9 @@ def main() -> None:
     port = free_port(args.port)
     server.configure(port)
     url = f"http://127.0.0.1:{port}/"
-    srv = uvicorn.Server(uvicorn.Config(server.app, host="127.0.0.1", port=port, log_level="warning"))
-
-    def shutdown() -> None:
-        srv.should_exit = True
-    server.state.shutdown = shutdown
+    srv = uvicorn.Server(uvicorn.Config(server.app, host="127.0.0.1", port=port, log_level="warning",
+                                        timeout_graceful_shutdown=SHUTDOWN_GRACE_SECONDS))
+    server.state.shutdown = lambda: _request_exit(srv)
 
     running = config.DATA_DIR / "running.json"
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -174,11 +233,11 @@ def main() -> None:
     threading.Thread(target=_watch, args=(srv, url, args.browser), daemon=True).start()
     try:
         srv.run()
+    except BaseException:  # noqa: BLE001 - log it; the process ends below either way
+        traceback.print_exc()
     finally:
-        try:
-            running.unlink()
-        except OSError:
-            pass
+        print(f"{config.APP_NAME} stopped.", flush=True)
+        _hard_exit()
 
 
 if __name__ == "__main__":
