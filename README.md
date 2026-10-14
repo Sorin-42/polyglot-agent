@@ -2,6 +2,12 @@
 
 A local computer-use assistant for Windows that you can talk to in any language.
 
+<p align="center">
+  <img src="docs/images/chat.png" width="900"
+       alt="A question asked in Chinese, the English the agent received, its three tool steps, and the answer translated back into Chinese">
+</p>
+<p align="center"><sub>Ask in your language. The agent works in English (shown under your message), reads the project files, and its reply comes back translated. The sample project and chats are made up.</sub></p>
+
 - **Main agent:** `claude-opus-5-5` at **high** effort, with adaptive thinking (summaries shown in the UI).
 - **Your language, chosen by you:** on first launch you pick your language from a list. The app never detects or guesses it from your text, browser or Windows settings. Change it any time in the top bar.
 - **Translation layer:** `claude-haiku-5-5` translates your message into English before the agent sees it, and translates the agent's English reply back into your language while it streams, one paragraph at a time.
@@ -11,14 +17,26 @@ A local computer-use assistant for Windows that you can talk to in any language.
 - **Folder permission:** the first time the agent reads a file in a new folder, you choose *Allow this folder* (you can edit the folder, for example widening it to the project root), *Just this file* or *Deny*. After that, reads in that folder never ask again, in this chat and in every later chat of the same project.
 - **Token usage:** the header meter shows how much of the context window is used and how much is left. Click it for a per-chat breakdown (agent, translator and memory review: input, cache hits, output, estimated cost). A one-line summary also follows every request.
 
-```
- you (中文 / 日本語 / Español / …)
-        │  Haiku: to English (code, paths and literal strings kept as-is)
-        ▼
- Opus 5.5 agent ── thinks, acts and writes memory in English only
-        │  streamed English reply
-        ▼
- Haiku: back to your language, paragraph by paragraph ──► UI
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/language-picker.png" alt="The language picker shown on first launch, with 20 languages"></td>
+    <td width="50%"><img src="docs/images/memory.png" alt="The Memory panel showing a project memory file translated into Chinese, with Tidy up and Clear all buttons"></td>
+  </tr>
+  <tr>
+    <td><sub>First launch: you choose your language. It is never detected.</sub></td>
+    <td><sub>Memory is kept in English for the agent; one click shows it in your language. Tidy up, Clear all and Undo are at the top.</sub></td>
+  </tr>
+</table>
+
+## How it works
+
+```mermaid
+flowchart LR
+    U["You<br/>中文 · 日本語 · Español · …"] -->|your message| T1["Haiku translator<br/>to English<br/>(code, paths and literal text kept as-is)"]
+    T1 -->|English only| A["Opus 5.5 agent<br/>thinks, acts and writes memory in English"]
+    A <-->|tool calls| T["Tools<br/>screen · mouse · keyboard<br/>PowerShell · files · web search · memory"]
+    A -->|streamed English reply| T2["Haiku translator<br/>to your language,<br/>paragraph by paragraph"]
+    T2 --> UI["Chat window"]
 ```
 
 Because the agent only ever sees English, its reasoning, tool calls and memory stay in one language. The agent is not told that a translation layer exists or which language you use: from its side, you simply write English. The UI still shows you both versions: click **Show English** under any reply, or turn on *Show English originals* in Settings.
@@ -71,6 +89,12 @@ python -m venv .venv
 Your language is the one you chose in the top bar; the translator is told that language and never detects it. Replies come back in that language.
 
 ## Safety: it controls your real mouse and keyboard
+
+<p align="center">
+  <img src="docs/images/control-overlay.png" width="800"
+       alt="An orange border around the screen, the label 'Claude is using your computer · Press Esc to stop', and an orange Claude pointer on a Notepad menu">
+</p>
+<p align="center"><sub>While Claude controls the computer: the border, the label and Claude's own pointer. The real overlay is hidden from screen capture, so this picture draws it onto a mock desktop with the app's own drawing code.</sub></p>
 
 - **You can always see when it is in control:** while the agent works on your desktop, an orange border glows around the screen with the label *Claude is using your computer · Press Esc to stop*, and an orange **Claude** pointer marks where it last pointed (it pulses when it clicks). Windows has a single real mouse pointer, so the real one still moves; the marker shows which moves are Claude's. These overlays are click-through, never take focus, and are hidden from screenshots, so the agent never sees them. Turn the visuals off in Settings → Tools.
 - **Esc** on your keyboard stops the agent at any time while it is in control, like the Stop button. Esc keys the agent sends itself (for example to close a menu) are ignored.
