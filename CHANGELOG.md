@@ -2,6 +2,18 @@
 
 All notable changes to Polyglot Agent. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.1] - 2026-10-13
+
+### Changed
+- Scrollbars now match Claude's style: thin, transparent track, a soft thumb (the border colour at 35%,
+  a little stronger while the pointer is over the area), in light and dark mode.
+
+### Fixed
+- The message box showed a scrollbar even for one line: its auto-height left out the 2 px border. It now
+  grows with the text and only scrolls once it reaches 40% of the window height.
+- After an update, the app window could keep running the old interface from its cache. The page now
+  loads its CSS, JS and icons with a version stamp that changes whenever those files change.
+
 ## [0.5.0] - 2026-10-13
 
 ### Added

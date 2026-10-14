@@ -100,7 +100,7 @@ details.thinking .body { padding: 0 12px 10px; font-size: 13px; color: var(--mut
 /* composer */
 .composer { border-top: 1px solid var(--border); background: var(--panel); padding: 10px max(16px, calc((100% - 860px) / 2)); }
 .input-row { display: flex; gap: 8px; align-items: flex-end; }
-.input-row textarea { flex: 1; resize: none; max-height: 40vh; min-height: 40px; padding: 9px 10px; }
+.input-row textarea { flex: 1; resize: none; max-height: 40vh; min-height: 40px; padding: 9px 10px; overflow-y: hidden; }
 .attachments { display: flex; gap: 6px; flex-wrap: wrap; }
 .attachments:not(:empty) { margin-bottom: 8px; }
 .att { position: relative; }
@@ -228,3 +228,13 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .mem-banner { padding: 8px 12px; font-size: 13px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--ok) 10%, var(--panel)); }
 .mem-banner.error { background: color-mix(in srgb, var(--err) 10%, var(--panel)); color: var(--err); }
 .mem-banner[hidden] { display: none; }
+
+/* ---------- scrollbars: Claude's style (thin, transparent track, soft thumb) ----------
+   Same values as claude.ai: the thumb is the border colour at 35%, a little stronger
+   while the pointer is over the scrolling area. */
+:root { --scroll-thumb: hsl(30 3.3% 11.8% / 35%); --scroll-thumb-hover: hsl(30 3.3% 11.8% / 55%); }
+@media (prefers-color-scheme: dark) {
+  :root { --scroll-thumb: hsl(51 16.5% 84.5% / 35%); --scroll-thumb-hover: hsl(51 16.5% 84.5% / 55%); }
+}
+* { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
+*:hover { scrollbar-color: var(--scroll-thumb-hover) transparent; }
