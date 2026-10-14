@@ -5,6 +5,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import re
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -91,10 +92,23 @@ def _meta() -> dict:
             "desktop": state.shutdown is not None}
 
 
+def _asset_version() -> str:
+    """Changes whenever any static file changes."""
+    h = hashlib.sha256()
+    for p in sorted(STATIC.rglob("*")):
+        if p.is_file():
+            st = p.stat()
+            h.update(f"{p.relative_to(STATIC)}:{st.st_size}:{st.st_mtime_ns};".encode())
+    return h.hexdigest()[:12]
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index() -> HTMLResponse:
     html = (STATIC / "index.html").read_text(encoding="utf-8")
     html = html.replace("__TOKEN__", TOKEN).replace("__APP_NAME__", config.APP_NAME)
+    # Versioned asset URLs: the app window keeps its cache between launches, and
+    # without this an updated app could keep running the old CSS/JS.
+    html = re.sub(r'((?:src|href)="/static/[^"?]+)"', rf'\1?v={_asset_version()}"', html)
     inline = f'window.PA_TOKEN = "{TOKEN}";'
     digest = base64.b64encode(hashlib.sha256(inline.encode()).digest()).decode()
     port = state.port

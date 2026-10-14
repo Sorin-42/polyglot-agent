@@ -719,8 +719,17 @@ function handle(ev) {
 
 /* -------------------------------------------------------------- composer */
 const input = $("input");
-function autosize() { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, window.innerHeight * 0.4) + "px"; }
+// Grow with the text. The box is border-box, so its height must include the border,
+// or the text overflows by 2px and a scrollbar appears. Scroll only past the cap.
+function autosize() {
+  input.style.height = "auto";
+  const want = input.scrollHeight + (input.offsetHeight - input.clientHeight);
+  const max = window.innerHeight * 0.4;
+  input.style.height = Math.min(want, max) + "px";
+  input.style.overflowY = want > max ? "auto" : "hidden";
+}
 input.addEventListener("input", autosize);
+window.addEventListener("resize", autosize);
 input.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
     e.preventDefault();

@@ -172,3 +172,13 @@ def test_memory_tidy_edits_and_rolls_back_on_failure():
         assert c.get("/api/memory/file", headers=h, params={"path": "/memories/tidy.md"}).json()["content"] \
             == "- likes tea\n- likes tea"
         c.delete("/api/memory/file", headers=h, params={"path": "/memories/tidy.md"})
+
+
+def test_static_assets_are_versioned():
+    """The app window caches between launches; versioned URLs make updates show up."""
+    import re as _re
+    with TestClient(server.app, base_url="http://127.0.0.1:8765") as c:
+        page = c.get("/").text
+    refs = _re.findall(r'(?:src|href)="(/static/[^"]+)"', page)
+    assert refs and all(r.endswith("?v=" + server._asset_version()) for r in refs)
+    assert "/static/app.js?v=" in page and "/static/style.css?v=" in page
