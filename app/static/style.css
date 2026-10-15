@@ -91,6 +91,13 @@ details.thinking .body { padding: 0 12px 10px; font-size: 13px; color: var(--mut
 .act img { grid-column: 2; max-width: 260px; border-radius: 6px; border: 1px solid var(--border); cursor: zoom-in; margin-top: 2px; }
 .notice { text-align: center; font-size: 13px; margin: 10px 0; color: var(--muted); }
 .notice.warn { color: var(--warn); } .notice.error { color: var(--err); }
+/* auto compact marker: a dashed divider; the summary opens below it */
+details.compacted { margin: 14px 0; font-size: 13px; color: var(--muted); }
+details.compacted summary { cursor: pointer; list-style: none; user-select: none; display: flex; align-items: center; gap: 10px; }
+details.compacted summary::-webkit-details-marker { display: none; }
+details.compacted summary::before, details.compacted summary::after { content: ""; flex: 1; border-top: 1px dashed color-mix(in srgb, var(--muted) 45%, transparent); }
+details.compacted.failed summary { color: var(--warn); cursor: default; }
+details.compacted .body { margin-top: 8px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); white-space: pre-wrap; max-height: 300px; overflow-y: auto; }
 
 .approval { border: 1px solid var(--warn); background: color-mix(in srgb, var(--warn) 8%, var(--panel)); border-radius: 10px; padding: 10px 12px; margin: 10px 0; }
 .approval pre { font-family: var(--mono); font-size: 12px; white-space: pre-wrap; max-height: 260px; overflow: auto; background: var(--code-bg); padding: 8px; border-radius: 6px; margin: 8px 0; }

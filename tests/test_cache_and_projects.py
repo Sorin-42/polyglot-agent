@@ -7,7 +7,7 @@ import httpx
 
 import app.agent as agent_mod
 from app.config import Settings
-from app.prompts import MEMORY_PASS_SYSTEM
+from app.prompts import COMPACT_INSTRUCTIONS, MEMORY_PASS_SYSTEM
 from app.store import Store
 from conftest import sse
 from test_agent import FakeComputer, _stream, _system_text, make_session
@@ -232,3 +232,101 @@ def test_full_screen_after_user_allows_and_switch_is_honoured(monkeypatch):
     # already in full-screen mode: no prompt at all
     settings2, _, events2, mode2 = _capture_flow(monkeypatch, {"approve": False}, start_mode="screen")
     assert not any(e["type"] == "approval_request" for e in events2) and mode2 == "screen"
+
+
+def _no_tools_settings(**kw):
+    return Settings(api_key="k", language="English", memory_pass=False, computer_use=False,
+                    shell_mode="off", file_tools_mode="off", web_search=False, memory_enabled=False, **kw)
+
+
+def test_auto_compact_round_trip(tmp_path):
+    """A compaction block in a reply is kept byte for byte, shown in the UI and billed;
+    the turns it summarized are dropped from later requests (the API ignores them)."""
+    store = Store(tmp_path)
+    main = []
+    THINK = {"type": "thinking", "thinking": "continue from the summary", "signature": "c2ln"}
+    SUMMARY = "<summary>The user is building a web scraper in C:/work/scraper.</summary>"
+    ITER = [{"type": "compaction", "input_tokens": 160_000, "output_tokens": 900},
+            {"type": "message", "input_tokens": 2_000, "output_tokens": 50}]
+
+    def handler(request):
+        body = json.loads(request.content)
+        main.append(body)
+        if len(main) == 2:   # this request crossed the trigger
+            return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=sse(
+                [{"type": "compaction", "content": SUMMARY}, THINK, {"type": "text", "text": "Added rate limiting."}],
+                usage={"iterations": ITER}))
+        return _stream([{"type": "text", "text": f"Answer {len(main)}."}])
+
+    events = []
+
+    async def run():
+        sess = make_session(_no_tools_settings(compact_trigger=60_000), handler, events)
+        sess.store = store
+        for text in ("Help me build a web scraper", "Add rate limiting", "Now add retries"):
+            await sess.submit(text, [])
+            await sess.turn_task
+        chat_id = sess.chat["id"]
+        await sess.close()
+        return chat_id
+
+    chat = store.load_chat(asyncio.run(run()))
+    assert len(main) == 3
+    for b in main:
+        assert b["context_management"] == {"edits": [{
+            "type": "compact_20260112", "trigger": {"type": "input_tokens", "value": 60_000},
+            "instructions": COMPACT_INSTRUCTIONS}]}
+    assert len(main[1]["messages"]) == 3                     # full history up to the compaction
+    third = main[2]["messages"]
+    assert len(third) == 2                                   # summarized turns dropped
+    assert third[0]["role"] == "assistant"
+    assert third[0]["content"][0] == {"type": "compaction", "content": SUMMARY}
+    assert third[0]["content"][1] == THINK                   # kept: it was made after the summary
+    assert third[1]["content"][-1]["text"] == "Now add retries"
+    # UI: a marker with the summary, and a status while it was written
+    marks = [e for e in events if e["type"] == "compacted"]
+    assert len(marks) == 1 and marks[0]["ok"] and marks[0]["summary"] == SUMMARY
+    assert any(e["type"] == "status" and e["state"] == "compacting" for e in events)
+    # the summarizing step is billed separately; the whole chat stays visible
+    assert chat["usage"]["compact"]["input_tokens"] == 160_000
+    assert chat["usage"]["compact"]["output_tokens"] == 900 and chat["usage"]["compact"]["calls"] == 1
+    assert chat["messages"][0]["content"][0]["type"] == "compaction"
+    assert any(d.get("original") == "Help me build a web scraper" for d in chat["display"])
+    assert any(d["type"] == "compacted" for d in chat["display"])
+
+
+def test_failed_compaction_keeps_history():
+    sess = agent_mod.Session(lambda: _no_tools_settings(), lambda ev: asyncio.sleep(0))
+    msgs = [{"role": "user", "content": [{"type": "text", "text": "a"}]},
+            {"role": "assistant", "content": [{"type": "compaction", "content": None},
+                                              {"type": "text", "text": "b"}]},
+            {"role": "user", "content": [{"type": "text", "text": "c"}]}]
+    sess.chat["messages"] = [dict(m) for m in msgs]
+    assert sess._drop_compacted() == 0 and sess.messages == msgs
+    asyncio.run(sess.http.aclose())
+
+
+def test_auto_compact_falls_back_when_unsupported():
+    bodies, events = [], []
+
+    def handler(request):
+        body = json.loads(request.content)
+        bodies.append(body)
+        if "context_management" in body:
+            return httpx.Response(400, json={"type": "error", "error": {
+                "type": "invalid_request_error",
+                "message": "context_management.edits.0: compact_20260112 is not supported on this model"}})
+        return _stream([{"type": "text", "text": "Hello."}])
+
+    async def run():
+        sess = make_session(_no_tools_settings(), handler, events)
+        await sess.submit("hi", [])
+        await sess.turn_task
+        await sess.submit("again", [])
+        await sess.turn_task
+        await sess.close()
+
+    asyncio.run(run())
+    assert len(bodies) == 3 and "context_management" not in bodies[1] and "context_management" not in bodies[2]
+    assert sum(e["type"] == "notice" and "Auto compact" in e["text"] for e in events) == 1
+    assert not any(e["type"] == "notice" and e.get("level") == "error" for e in events)

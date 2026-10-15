@@ -87,8 +87,7 @@ class Settings:
     capture_mode: str = "window"           # window = focused window only; screen = work area
     max_screenshot_edge: int = 1568        # long edge sent to the model
     confirm_computer_actions: bool = False
-    control_indicator: bool = True         # border + Claude's pointer while it controls the PC
-    shell_mode: str = "ask"                # PowerShell tool: ask / auto / off
+    shell_mode: str = "ask"              # PowerShell tool: ask / auto / off
     file_tools_mode: str = "ask"           # text editor writes: ask / auto / off
     web_search: bool = True
     # memory
@@ -100,6 +99,9 @@ class Settings:
     # context management (server-side tool-result clearing)
     context_clear_trigger: int = 100_000
     context_keep_tool_uses: int = 6
+    # auto compact (server-side): summarize older turns once the prompt reaches the trigger
+    auto_compact: bool = True
+    compact_trigger: int = 150_000
 
     def effective_api_key(self) -> str:
         return self.api_key.strip() or os.environ.get("ANTHROPIC_API_KEY", "").strip()
@@ -164,6 +166,7 @@ def apply_updates(s: Settings, updates: dict) -> Settings:
     s.max_screenshot_edge = max(640, min(s.max_screenshot_edge, 2000))
     s.max_steps = max(1, min(s.max_steps, 500))
     s.max_tokens = max(1024, min(s.max_tokens, 128_000))
+    s.compact_trigger = max(50_000, min(s.compact_trigger, 800_000))   # API minimum is 50k
     return s
 
 

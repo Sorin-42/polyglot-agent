@@ -269,10 +269,10 @@ class ControlOverlay:
         self._swallow_esc = False
 
     # ------------------------------------------------------------ public API
-    def show(self, rect: Optional[tuple[int, int, int, int]], label: str, visible: bool = True) -> None:
-        """Enter control mode: arm Esc, and (if visible) draw the border and label."""
+    def show(self, rect: Optional[tuple[int, int, int, int]], label: str) -> None:
+        """Enter control mode: arm Esc and draw the border and label."""
         self.active = True
-        self._send("show", rect, label, visible)
+        self._send("show", rect, label)
 
     def pointer(self, click: bool = False) -> None:
         """Move the agent's pointer marker to the current cursor position."""
@@ -306,7 +306,6 @@ class ControlOverlay:
         self._swallow_esc = False
         self._pulse_timer = 0
         self._scale = 1.0
-        self._visible = True
         self._marker_at: Optional[tuple[int, int]] = None
         self._rect = (0, 0, 1 << 30, 1 << 30)
         self._wndproc = WNDPROC(lambda h, m, w, l: _u32.DefWindowProcW(h, m, w, l))
@@ -349,12 +348,9 @@ class ControlOverlay:
             except Exception as e:  # noqa: BLE001 - the overlay must never break the agent
                 print(f"control overlay: {cmd[0]} failed: {e}", flush=True)
 
-    def _do_show(self, rect, label: str, visible: bool) -> None:
-        if self._hook is None:   # Esc works even if the visual signal is turned off
+    def _do_show(self, rect, label: str) -> None:
+        if self._hook is None:
             self._hook = _u32.SetWindowsHookExW(13, self._hookproc, _k32.GetModuleHandleW(None), 0)
-        self._visible = visible
-        if not visible:
-            return
         if rect is None:
             rect = (0, 0, _u32.GetSystemMetrics(0), _u32.GetSystemMetrics(1))
         self._rect = rect
@@ -373,8 +369,6 @@ class ControlOverlay:
             _u32.SetWindowPos(self._wins[name], HWND_TOPMOST, 0, 0, 0, 0, SWP_FLAGS)
 
     def _do_pointer(self, click: bool) -> None:
-        if not self._visible:
-            return
         pt = wintypes.POINT()
         _u32.GetCursorPos(ctypes.byref(pt))
         self._marker_at = (pt.x, pt.y)

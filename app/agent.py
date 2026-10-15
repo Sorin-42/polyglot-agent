@@ -30,12 +30,13 @@ from .local_tools import (EDITOR_NAME, EDITOR_WRITE_COMMANDS, POWERSHELL_TOOL, W
                           describe_editor_write, folder_for, is_within, run_editor, run_powershell)
 from .memory_store import MemoryError_, MemoryStore
 from .overlay import ControlOverlay, control_label
-from .prompts import MEMORY_PASS_SYSTEM, MEMORY_TIDY_SYSTEM, agent_system_prompt, slug
+from .prompts import COMPACT_INSTRUCTIONS, MEMORY_PASS_SYSTEM, MEMORY_TIDY_SYSTEM, agent_system_prompt, slug
 from .store import Store, new_id
 from .translator import StreamingTranslation, Translator, english_name
 
 Emit = Callable[[dict], Awaitable[None]]
 CONTEXT_BETA = "context-management-2025-06-27"
+COMPACT_BETA = "compact-2026-01-12"
 BINDING_BETA = "thinking-binding-controls-2026-08-01"
 # Safety net for very long computer-use sessions: once the request carries this
 # many screenshots (or this many bytes of them), old ones are replaced by text in
@@ -112,6 +113,7 @@ class Session:
         self._live_translations: list[StreamingTranslation] = []
         self._translations: list[asyncio.Task] = []
         self._use_binding = True
+        self._use_compact = True
         self.state = "idle"
         self.session_cost = 0.0
         self.computer: Optional[LocalComputer] = None
@@ -254,7 +256,7 @@ class Session:
         s = self.get_settings()
         self._loop = asyncio.get_running_loop()
         rect = getattr(computer, "_monitor_rect", lambda: None)()
-        self.overlay.show(rect, control_label(s.language), visible=s.control_indicator)
+        self.overlay.show(rect, control_label(s.language))
 
     def _control_off(self) -> None:
         if self.overlay is not None:
@@ -357,6 +359,7 @@ class Session:
             thinking["block_binding"] = {"prefix_mismatch_behavior": "drop_block"}
             betas.append(BINDING_BETA)
         body["thinking"] = thinking
+        edits: list[dict] = []
         if tools:
             edit: dict[str, Any] = {
                 "type": "clear_tool_uses_20250919",
@@ -367,8 +370,18 @@ class Session:
             }
             if any(t.get("name") == "memory" for t in tools):
                 edit["exclude_tools"] = ["memory"]
-            body["context_management"] = {"edits": [edit]}
+            edits.append(edit)
             betas.append(CONTEXT_BETA)
+        if s.auto_compact and self._use_compact:
+            # Server-side compaction: once the prompt reaches the trigger, the API
+            # summarizes the older turns into a compaction block at the start of the
+            # reply. It is part of the reply, so the transcript stays append-only.
+            edits.append({"type": "compact_20260112",
+                          "trigger": {"type": "input_tokens", "value": s.compact_trigger},
+                          "instructions": COMPACT_INSTRUCTIONS})
+            betas.append(COMPACT_BETA)
+        if edits:
+            body["context_management"] = {"edits": edits}
         return body, betas
 
     def _repair_transcript(self) -> None:
@@ -380,6 +393,22 @@ class Session:
         if uses:
             self.messages.append({"role": "user", "content": [
                 _tool_result(u, "Not executed: the task was interrupted.", True) for u in uses]})
+
+    def _drop_compacted(self) -> int:
+        """The API ignores everything before the latest compaction block, so the
+        messages before it are dropped at the start of a turn: the model sees the
+        same conversation, but requests and the saved chat stay small. Only done
+        when that block holds a summary (a failed compaction has none)."""
+        msgs = self.messages
+        for i in range(len(msgs) - 1, -1, -1):
+            content = msgs[i]["content"] if isinstance(msgs[i]["content"], list) else []
+            blocks = [b for b in content if b.get("type") == "compaction"]
+            if blocks:
+                if i == 0 or not blocks[-1].get("content"):
+                    return 0
+                del msgs[:i]
+                return i
+        return 0
 
     def _prune_images(self) -> int:
         """Batch-replace old screenshots once the request gets too heavy."""
@@ -448,6 +477,7 @@ class Session:
     async def _turn(self, text: str, images: list[dict]) -> None:
         s = self.get_settings()
         chat = self.chat
+        self._drop_compacted()
         turn_start = len(self.messages)
         saved_last = copy.deepcopy(self.messages[-1]) if self.messages else None
         usage_before = copy.deepcopy(chat["usage"])
@@ -537,7 +567,7 @@ class Session:
             self.messages.append({"role": "assistant", "content": msg["content"]})
             await self._record_main_usage(s, msg)
             stop = msg.get("stop_reason")
-            if stop == "pause_turn":
+            if stop in ("pause_turn", "compaction"):
                 continue
             tool_uses = [b for b in msg["content"] if b.get("type") == "tool_use"]
             truncated = set()
@@ -559,7 +589,11 @@ class Session:
     async def _record_main_usage(self, s: Settings, msg: dict) -> None:
         u = msg.get("usage") or {}
         self._add_usage("agent", s.model, u)
-        prompt = sum(int(u.get(k) or 0) for k in USAGE_KEYS[:3])
+        # The top-level counts leave out compaction; its summarizing step is billed too.
+        for it in u.get("iterations") or []:
+            if it.get("type") == "compaction":
+                self._add_usage("compact", s.model, it)
+        prompt =sum(int(u.get(k) or 0) for k in USAGE_KEYS[:3])
         self.chat["context"] = {
             "used": prompt + int(u.get("output_tokens") or 0),
             "window": config.CONTEXT_WINDOWS.get(s.model, config.DEFAULT_CONTEXT_WINDOW),
@@ -592,6 +626,11 @@ class Session:
             await st.discard_all()
             if e.status == 400 and self._use_binding and "binding" in e.message.lower():
                 self._use_binding = False  # model/account without binding controls
+                return await self._sample(s)
+            if e.status == 400 and self._use_compact and "compact" in e.message.lower():
+                self._use_compact = False  # model/account without server-side compaction
+                await self.notice(f"Auto compact is not available here ({e.message}); continuing without it.",
+                                  "warn")
                 return await self._sample(s)
             raise
         except Exception:
@@ -1024,6 +1063,8 @@ class _StreamState:
                     self.created.append(item)
                     self.thinking[idx] = item
                     await sess.emit({"type": "thinking_start", "id": item["id"]})
+                elif btype == "compaction":
+                    await sess.status("compacting")
         elif kind == "text_delta":
             if self.seg is None:
                 await self._open_segment()
@@ -1048,6 +1089,15 @@ class _StreamState:
                 await sess.emit({"type": "thinking_final", "id": item["id"], "text": item["text"]})
                 if not item["text"].strip() and item in sess.display:
                     sess.display.remove(item)
+            elif btype == "compaction":
+                # Older turns were summarized (English, kept for the agent). The UI shows
+                # a marker; the summary can be expanded under it.
+                summary = payload.get("content") or ""
+                item = sess._store({"type": "compacted", "id": _id(), "ok": bool(summary),
+                                    "summary": summary})
+                self.created.append(item)
+                await sess.emit(item)
+                await sess.status("thinking")
             elif btype == "server_tool_use":
                 inp = payload.get("input") or {}
                 item = sess._store({"type": "action", "id": payload.get("id", _id()), "kind": "web",
