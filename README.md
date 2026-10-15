@@ -43,7 +43,7 @@ Because the agent only ever sees English, its reasoning, tool calls and memory s
 
 ### Prompt cache stays intact
 
-Translation happens only at the edges. The agent's transcript is append-only, and the translator never edits or re-sends it. Each translator call contains just the one message being translated. Within a chat, the system prompt, the tool list and the thinking mode are frozen at the first request and saved with the chat. Changing language, toggling settings or reopening the chat after a restart therefore doesn't change the cached prefix. `tests/test_cache_and_projects.py` checks this byte for byte. Changing the model or effort mid-chat does start a new cache.
+Translation happens only at the edges. The agent's transcript is append-only, and the translator never edits or re-sends it. Each translator call contains just the one message being translated. Within a chat, the system prompt, the tool list and the thinking mode are frozen at the first request and saved with the chat. Changing language, toggling settings or reopening the chat after a restart therefore doesn't change the cached prefix. `tests/test_cache_and_projects.py` checks this byte for byte. Changing the model or effort mid-chat does start a new cache. Auto compact keeps this rule too: the summary arrives as part of a reply and is passed back unchanged. The API ignores everything before it, so the app drops those older messages from later requests.
 
 ### What the agent receives from your PC
 
@@ -96,7 +96,7 @@ Your language is the one you chose in the top bar; the translator is told that l
 </p>
 <p align="center"><sub>While Claude controls the computer: the border, the label and Claude's own pointer. The real overlay is hidden from screen capture, so this picture draws it onto a mock desktop with the app's own drawing code.</sub></p>
 
-- **You can always see when it is in control:** while the agent works on your desktop, an orange border glows around the screen with the label *Claude is using your computer · Press Esc to stop*, and an orange **Claude** pointer marks where it last pointed (it pulses when it clicks). Windows has a single real mouse pointer, so the real one still moves; the marker shows which moves are Claude's. These overlays are click-through, never take focus, and are hidden from screenshots, so the agent never sees them. Turn the visuals off in Settings → Tools.
+- **You can always see when it is in control:** while the agent works on your desktop, an orange border glows around the screen with the label *Claude is using your computer · Press Esc to stop*, and an orange **Claude** pointer marks where it last pointed (it pulses when it clicks). Windows has a single real mouse pointer, so the real one still moves; the marker shows which moves are Claude's. These overlays are click-through, never take focus, and are hidden from screenshots, so the agent never sees them. They are always on.
 - **Esc** on your keyboard stops the agent at any time while it is in control, like the Stop button. Esc keys the agent sends itself (for example to close a menu) are ignored.
 - **Stop** button: halts the current action immediately, including mid-typing and mid-scroll.
 - **Fail-safe:** move the mouse into any screen corner and the next action aborts.
@@ -113,9 +113,10 @@ Your language is the one you chose in the top bar; the translator is told that l
 | Model / Effort | `claude-opus-5-5` / `high` | Opus 5.5 defaults to *medium* when effort is omitted, so this app sets *high* explicitly. Use *xhigh* or *max* for hard tasks. |
 | Translator | `claude-haiku-5-5`, effort `low`, thinking off | Fast and cheap. Use `claude-sonnet-5-5` for harder technical prose. |
 | Screenshot long edge | 1568 px | Within the toolset limits (≤ 2000 px per side, ≤ 4784 visual tokens). Coordinates are scaled back to physical pixels. The agent can `zoom` to read small text. |
-| Screenshots | window | *window* = focused window only; *screen* = whole screen. The taskbar is excluded in both. |
+| Screenshots | Active app | *Active app* = focused window only; *Full screen* = whole screen. The taskbar is excluded in both. |
 | Monitor | 1 | Which display to control. 1 is the primary. |
 | Clear old tool results after | 100k input tokens | Server-side context editing removes old screenshots. Pruning on the client would invalidate Opus 5.5 thinking blocks. Memory results are never cleared. |
+| Auto compact | on, at 150k tokens | When the context reaches the trigger, the API summarizes the older messages (server-side compaction) and the agent continues from that summary. A divider marks the spot in the chat; click it to read the summary (in English). You still see the whole chat. The summarizing step shows up as *Auto compact* in the token usage. |
 | Memory reviewer | `claude-haiku-5-5` | Runs after each request. Turn it off to save tokens. |
 
 Tool and system-prompt changes take effect in the **next new chat**. Model and effort changes take effect immediately.

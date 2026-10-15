@@ -12,7 +12,7 @@ const renderQueue = new Set();
 /* ------------------------------------------------------------------ i18n */
 const STR = {
   en: {
-    language: "Language", memory: "Memory", newChat: "New chat", settings: "Settings", screen: "Screen",
+    language: "Language", memory: "Memory", newChat: "New chat", settings: "Settings", screen: "Screen", chats: "Chats",
     welcomeTitle: "What can I help with?",
     welcomeBody: "Ask anything — PCB design, debugging, research, everyday questions — or ask me to operate your computer.",
     attach: "Attach image", placeholder: "Message… (Enter to send, Shift+Enter for a new line)",
@@ -58,9 +58,30 @@ const STR = {
     shareLabel: "Screen sharing", shareWindow: "Active app", shareScreen: "Full screen",
     shareHint: "What the agent's screenshots include. The taskbar is never shared.",
     approveTitle_screen: "Let the agent see your full screen? (Otherwise it only sees the active app.)",
+    compacting: "Compacting context", compacted: "Context compacted: earlier messages were summarized",
+    compactFailed: "Auto compact failed; continuing with the full context",
+    compactHint: "Click to see the summary the agent continues from (in English)", row_compact: "Auto compact",
+    // settings form (option values without an entry here are shown as-is: low, medium, ask, auto…)
+    set_api_key: "Anthropic API key", set_base_url: "Base URL", keySet: "set", keyNotSet: "Not set (or set ANTHROPIC_API_KEY)",
+    set_model: "Model", set_effort: "Effort", set_max_tokens: "Max tokens / reply", set_max_steps: "Max steps / request",
+    set_show_thinking: "Show thinking summaries",
+    set_cache_note: "Changing model or effort mid-chat starts a fresh prompt cache for that chat.",
+    set_translator_model: "Translator model", set_translator_effort: "Translator effort",
+    set_show_original: "Show English originals",
+    set_computer_use: "Computer control (screen, mouse, keyboard)", set_capture_mode: "Screenshots",
+    set_capture_note: "Active app = the focused window only · Full screen = the whole screen. The taskbar is never included.",
+    set_confirm_actions: "Ask before every mouse/keyboard action",
+    set_esc_note: "While Claude controls the computer, a border and Claude's pointer are shown. Press Esc on your keyboard at any time to stop it.",
+    set_monitor: "Monitor", set_screenshot_edge: "Screenshot long edge (px)", set_shell_mode: "PowerShell commands",
+    set_file_mode: "File edits", set_file_note: "Reading files asks once per folder.", set_web_search: "Web search",
+    set_memory_enabled: "Persistent memory", set_memory_pass: "Review & update memory after each request",
+    set_memory_model: "Memory reviewer model", set_context: "Context",
+    set_auto_compact: "Auto compact long chats", set_compact_trigger: "Compact when the context reaches (tokens)",
+    set_compact_note: "Older messages are summarized so the chat can keep going. The summary replaces them for the agent; you still see the whole chat.",
+    set_clear_trigger: "Clear old tool results after (input tokens)", set_keep_tools: "Keep most recent tool results",
   },
   zh: {
-    language: "语言", memory: "记忆", newChat: "新对话", settings: "设置", screen: "屏幕",
+    language: "语言", memory: "记忆", newChat: "新对话", settings: "设置", screen: "屏幕", chats: "对话列表",
     welcomeTitle: "需要我帮你做什么？",
     welcomeBody: "随便问——PCB 设计、调试代码、查资料、日常问题——也可以让我直接操作你的电脑。",
     attach: "添加图片", placeholder: "输入消息…（Enter 发送，Shift+Enter 换行）",
@@ -106,6 +127,29 @@ const STR = {
     shareLabel: "屏幕共享", shareWindow: "仅当前应用", shareScreen: "全屏",
     shareHint: "智能体截图包含的范围。任务栏永远不会被共享。",
     approveTitle_screen: "允许智能体查看整个屏幕？（否则只能看到当前应用。）",
+    compacting: "正在压缩上下文", compacted: "上下文已自动压缩：较早的消息已总结为摘要",
+    compactFailed: "自动压缩失败，继续使用完整上下文",
+    compactHint: "点击查看智能体接下来依据的摘要（英文）", row_compact: "自动压缩",
+    set_api_key: "Anthropic API 密钥", set_base_url: "API 地址（Base URL）", keySet: "已设置",
+    keyNotSet: "未设置（也可以设置环境变量 ANTHROPIC_API_KEY）",
+    set_model: "模型", set_effort: "推理强度", set_max_tokens: "每次回复最多 token 数", set_max_steps: "每个请求最多步数",
+    set_show_thinking: "显示思考摘要",
+    set_cache_note: "在对话中途更换模型或推理强度，会为这个对话重新建立提示缓存。",
+    set_translator_model: "翻译模型", set_translator_effort: "翻译推理强度",
+    set_show_original: "显示英文原文",
+    set_computer_use: "电脑控制（屏幕、鼠标、键盘）", set_capture_mode: "截图范围",
+    set_capture_note: "仅当前应用 = 只截取当前聚焦的窗口 · 全屏 = 整个屏幕。任务栏永远不会被截取。",
+    set_confirm_actions: "每次鼠标/键盘操作前都先询问",
+    set_esc_note: "Claude 控制电脑时，屏幕四周会显示边框和 Claude 的指针。随时按键盘上的 Esc 即可让它停止。",
+    set_monitor: "显示器", set_screenshot_edge: "截图长边（像素）", set_shell_mode: "PowerShell 命令",
+    set_file_mode: "文件修改", set_file_note: "读取文件时，每个文件夹只询问一次。", set_web_search: "网络搜索",
+    set_memory_enabled: "长期记忆", set_memory_pass: "每次请求后检查并更新记忆",
+    set_memory_model: "记忆整理模型", set_context: "上下文",
+    set_auto_compact: "自动压缩长对话", set_compact_trigger: "上下文达到多少 token 时压缩",
+    set_compact_note: "较早的消息会被总结成摘要，让对话可以继续。智能体只看到摘要，你仍能看到完整的对话。",
+    set_clear_trigger: "输入超过多少 token 后清除旧的工具结果", set_keep_tools: "保留最近几次工具结果",
+    effort_low: "低", effort_medium: "中", effort_high: "高", effort_xhigh: "超高", effort_max: "最高",
+    mode_ask: "先询问", mode_auto: "自动", mode_off: "关闭",
   },
 };
 // The UI follows the language the user chose; nothing is detected from the browser or OS.
@@ -363,6 +407,17 @@ function renderNotice(d) {
   items.set(d.id, { el: n, data: d });
   append(n);
 }
+function renderCompacted(d) {
+  const det = el("details", "compacted" + (d.ok ? "" : " failed"));
+  const sum = el("summary", "", t(d.ok ? "compacted" : "compactFailed"));
+  det.appendChild(sum);
+  if (d.ok) {
+    sum.title = t("compactHint");
+    det.appendChild(el("div", "body", d.summary || ""));
+  } else sum.onclick = (e) => e.preventDefault();   // nothing to show
+  items.set(d.id, { el: det, data: d });
+  append(det);
+}
 function inTokens(u) { return (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0); }
 function renderTurnUsage(d) {
   const u = d.usage || {};
@@ -374,6 +429,7 @@ function renderTurnUsage(d) {
   }
   if (u.translator) parts.push(`${t("row_translator")} ${fmtK(inTokens(u.translator) + (u.translator.output_tokens || 0))}`);
   if (u.memory) parts.push(`${t("row_memory")} ${fmtK(inTokens(u.memory) + (u.memory.output_tokens || 0))}`);
+  if (u.compact) parts.push(`${t("row_compact")} ${fmtK(inTokens(u.compact) + (u.compact.output_tokens || 0))}`);
   const cost = Object.values(u).reduce((a, x) => a + (x.cost || 0), 0);
   parts.push("≈ " + money(cost));
   const line = el("div", "turn-usage", "Σ " + parts.join("  ·  "));
@@ -423,6 +479,7 @@ function renderHistoryItem(d) {
   else if (d.type === "action") renderAction(d);
   else if (d.type === "notice") renderNotice(d);
   else if (d.type === "turn_usage") renderTurnUsage(d);
+  else if (d.type === "compacted") renderCompacted(d);
 }
 function clearChat() {
   items.clear();
@@ -462,7 +519,7 @@ function renderUsagePanel() {
   ["", t("input"), t("cached"), t("output"), t("cost")].forEach((h) => head.appendChild(el("th", "", h)));
   tbl.appendChild(head);
   const tot = { i: 0, c: 0, o: 0, cost: 0 };
-  ["agent", "translator", "memory"].forEach((cat) => {
+  ["agent", "compact", "translator", "memory"].forEach((cat) => {
     const u = usage[cat];
     if (!u) return;
     const i = (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0), c = u.cache_read_input_tokens || 0, o = u.output_tokens || 0;
@@ -690,6 +747,7 @@ function handle(ev) {
       break;
     case "discard": if (it) { it.el.remove(); items.delete(ev.id); } break;
     case "notice": renderNotice(ev); break;
+    case "compacted": renderCompacted(ev); break;
     case "turn_usage": renderTurnUsage(ev); break;
     case "usage": setUsage(ev); break;
     case "approval_request": renderApproval(ev); break;
@@ -835,19 +893,27 @@ function fillSelect(name, values) {
   const s = form.elements[name]; if (!s) return;
   s.replaceChildren(); values.forEach((v) => { const o = el("option", "", v); o.value = v; s.appendChild(o); });
 }
+// Option text in the UI language; the value sent to the server stays the API value.
+function labelOptions(name, text) {
+  [...(form.elements[name] || { options: [] }).options].forEach((o) => (o.textContent = text(o.value)));
+}
+const optText = (prefix) => (v) => (STR[uiLang()] || {})[prefix + v] || STR.en[prefix + v] || v;
 function fillSettingsForm() {
   fillSelect("effort", meta.efforts || []); fillSelect("translator_effort", meta.efforts || []);
   fillSelect("shell_mode", meta.approval_modes || []); fillSelect("file_tools_mode", meta.approval_modes || []);
   fillSelect("capture_mode", meta.capture_modes || ["window", "screen"]);
   fillSelect("window_mode", meta.window_modes || ["app"]);
-  [...(form.elements.window_mode || { options: [] }).options].forEach((o) => (o.textContent = t("win_" + o.value)));
+  ["effort", "translator_effort"].forEach((n) => labelOptions(n, optText("effort_")));
+  ["shell_mode", "file_tools_mode"].forEach((n) => labelOptions(n, optText("mode_")));
+  labelOptions("capture_mode", (v) => t(v === "screen" ? "shareScreen" : "shareWindow"));
+  labelOptions("window_mode", (v) => t("win_" + v));
   const dl = $("modelList"); dl.replaceChildren(); (meta.models || []).forEach((m) => { const o = el("option"); o.value = m; dl.appendChild(o); });
   for (const [k, v] of Object.entries(settings)) {
     const f = form.elements[k]; if (!f || k === "api_key") continue;
     if (f.type === "checkbox") f.checked = !!v; else f.value = v;
   }
   form.elements.api_key.value = "";
-  $("keyHint").textContent = settings.api_key_set ? `✓ ${settings.api_key_hint || "set"}` : "Not set (or set ANTHROPIC_API_KEY)";
+  $("keyHint").textContent = settings.api_key_set ? `✓ ${settings.api_key_hint || t("keySet")}` : t("keyNotSet");
 }
 $("btnSettings").onclick = () => { fillSettingsForm(); $("btnQuit").hidden = !meta.desktop; $("settingsModal").hidden = false; };
 $("btnQuit").onclick = () => twoClick($("btnQuit"), t("quitApp"), async () => {

@@ -24,9 +24,9 @@ def fake_overlay(monkeypatch):
             self.on_escape, self.calls, self.active = on_escape, [], False
             made.append(self)
 
-        def show(self, rect, label, visible=True):
+        def show(self, rect, label):
             self.active = True
-            self.calls.append(("show", label, visible))
+            self.calls.append(("show", label))
 
         def pointer(self, click=False):
             self.calls.append(("pointer", click))
@@ -43,8 +43,9 @@ def fake_overlay(monkeypatch):
     return made
 
 
-def sse(blocks, stop_reason="end_turn", model="claude-opus-5-5", chunk=7):
-    """Build an SSE byte stream equivalent to a Messages API streaming response."""
+def sse(blocks, stop_reason="end_turn", model="claude-opus-5-5", chunk=7, usage=None):
+    """Build an SSE byte stream equivalent to a Messages API streaming response.
+    `usage` adds fields to the final usage (e.g. compaction `iterations`)."""
     out = []
 
     def ev(name, data):
@@ -74,6 +75,12 @@ def sse(blocks, stop_reason="end_turn", model="claude-opus-5-5", chunk=7):
                                        "delta": {"type": "thinking_delta", "thinking": b["thinking"]}})
             ev("content_block_delta", {"type": "content_block_delta", "index": i,
                                        "delta": {"type": "signature_delta", "signature": b["signature"]}})
+        elif t == "compaction":
+            # the whole summary arrives in a single delta
+            ev("content_block_start", {"type": "content_block_start", "index": i,
+                                       "content_block": {"type": "compaction", "content": None}})
+            ev("content_block_delta", {"type": "content_block_delta", "index": i,
+                                       "delta": {"type": "compaction_delta", "content": b["content"]}})
         elif t == "tool_use":
             start = {"type": "tool_use", "id": b["id"], "name": b["name"], "input": {}}
             if "toolset_name" in b:
@@ -85,6 +92,6 @@ def sse(blocks, stop_reason="end_turn", model="claude-opus-5-5", chunk=7):
                                            "delta": {"type": "input_json_delta", "partial_json": raw[j:j + 5]}})
         ev("content_block_stop", {"type": "content_block_stop", "index": i})
     ev("message_delta", {"type": "message_delta", "delta": {"stop_reason": stop_reason, "stop_sequence": None},
-                         "usage": {"output_tokens": 50}})
+                         "usage": {"output_tokens": 50, **(usage or {})}})
     ev("message_stop", {"type": "message_stop"})
     return "".join(out).encode()

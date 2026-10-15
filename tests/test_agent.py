@@ -117,8 +117,13 @@ def test_full_turn_translates_and_keeps_agent_english(monkeypatch):
     types = [t.get("type") for t in b1["tools"]]
     assert "computer_toolset_20260801" in types and "memory_20250818" in types and "web_search_20250305" in types
     assert not any("display_width_px" in t for t in b1["tools"])
-    assert b1["context_management"]["edits"][0]["type"] == "clear_tool_uses_20250919"
+    edits = b1["context_management"]["edits"]
+    assert [e["type"] for e in edits] == ["clear_tool_uses_20250919", "compact_20260112"]
+    assert edits[1]["trigger"] == {"type": "input_tokens", "value": 150_000}
+    assert "Do not call any tools" in edits[1]["instructions"]
+    assert "translat" not in edits[1]["instructions"].lower()
     assert "context-management-2025-06-27" in main_headers[0]
+    assert "compact-2026-01-12" in main_headers[0]
     assert "thinking-binding-controls-2026-08-01" in main_headers[0]
     # second call: thinking block passed back untouched, tool_result carries toolset_name + image
     assert b2["messages"][1]["content"][0] == THINK
@@ -361,7 +366,7 @@ def test_control_signal_shows_while_acting(monkeypatch, fake_overlay):
 
     asyncio.run(run())
     from app.overlay import DEFAULT_LABEL
-    assert fake_overlay[0].calls == [("show", DEFAULT_LABEL, True), ("pointer", True), ("hide",)]
+    assert fake_overlay[0].calls == [("show", DEFAULT_LABEL), ("pointer", True), ("hide",)]
     # the agent is never told about the signal
     told = _system_text(main_bodies[0]).lower()
     assert all(w not in told for w in ("esc to stop", "border", "overlay", "pointer marker"))
@@ -383,7 +388,7 @@ def test_escape_stops_the_agent(monkeypatch, fake_overlay):
     monkeypatch.setattr(agent_mod, "LocalComputer", SlowComputer)
     main_bodies, events = [], []
     settings = Settings(api_key="sk-test", language="English", memory_pass=False, shell_mode="off",
-                        file_tools_mode="off", web_search=False, control_indicator=False)
+                        file_tools_mode="off", web_search=False)
     settings._auto_answer = True
 
     async def run():
@@ -400,5 +405,5 @@ def test_escape_stops_the_agent(monkeypatch, fake_overlay):
     assert len(main_bodies) == 1                                   # nothing after the Esc
     assert any(e["type"] == "notice" and "Esc" in e["text"] for e in events)
     calls = fake_overlay[0].calls
-    assert calls[0][0] == "show" and calls[0][2] is False          # Esc works with the border off
+    assert calls[0][0] == "show"                                   # the border is always shown
     assert calls[-1] == ("hide",)

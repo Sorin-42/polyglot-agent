@@ -15,7 +15,7 @@
 </head>
 <body>
 <header class="topbar">
-  <button id="btnSidebar" class="ghost icon-btn" title="Chats">☰</button>
+  <button id="btnSidebar" class="ghost icon-btn" data-i18n-title="chats" title="Chats">☰</button>
   <div class="brand"><img class="logo" src="/static/icons/icon-192.png" alt=""><span>__APP_NAME__</span></div>
   <span id="crumb" class="crumb"></span>
   <label class="lang">
@@ -141,33 +141,32 @@
     <div class="modal-head"><strong data-i18n="settings">Settings</strong><button type="button" id="setClose" class="ghost">✕</button></div>
     <div class="modal-body">
       <fieldset><legend>API</legend>
-        <label>Anthropic API key <input type="password" name="api_key" autocomplete="off" placeholder="sk-ant-…"><small id="keyHint" class="muted"></small></label>
-        <label>Base URL <input name="base_url"></label>
+        <label><span data-i18n="set_api_key">Anthropic API key</span> <input type="password" name="api_key" autocomplete="off" placeholder="sk-ant-…"><small id="keyHint" class="muted"></small></label>
+        <label><span data-i18n="set_base_url">Base URL</span> <input name="base_url"></label>
       </fieldset>
       <fieldset><legend data-i18n="agent">Agent</legend>
-        <label>Model <input name="model" list="modelList"></label>
-        <label>Effort <select name="effort"></select></label>
-        <label>Max tokens / reply <input type="number" name="max_tokens" min="1024" max="128000"></label>
-        <label>Max steps / request <input type="number" name="max_steps" min="1" max="500"></label>
-        <label class="check"><input type="checkbox" name="show_thinking"> Show thinking summaries</label>
-        <small class="muted">Changing model or effort mid-chat starts a fresh prompt cache for that chat.</small>
+        <label><span data-i18n="set_model">Model</span> <input name="model" list="modelList"></label>
+        <label><span data-i18n="set_effort">Effort</span> <select name="effort"></select></label>
+        <label><span data-i18n="set_max_tokens">Max tokens / reply</span> <input type="number" name="max_tokens" min="1024" max="128000"></label>
+        <label><span data-i18n="set_max_steps">Max steps / request</span> <input type="number" name="max_steps" min="1" max="500"></label>
+        <label class="check"><input type="checkbox" name="show_thinking"> <span data-i18n="set_show_thinking">Show thinking summaries</span></label>
+        <small class="muted" data-i18n="set_cache_note">Changing model or effort mid-chat starts a fresh prompt cache for that chat.</small>
       </fieldset>
       <fieldset><legend data-i18n="translation">Translation</legend>
-        <label>Translator model <input name="translator_model" list="modelList"></label>
-        <label>Translator effort <select name="translator_effort"></select></label>
-        <label class="check"><input type="checkbox" name="show_original"> Show English originals</label>
+        <label><span data-i18n="set_translator_model">Translator model</span> <input name="translator_model" list="modelList"></label>
+        <label><span data-i18n="set_translator_effort">Translator effort</span> <select name="translator_effort"></select></label>
+        <label class="check"><input type="checkbox" name="show_original"> <span data-i18n="set_show_original">Show English originals</span></label>
       </fieldset>
       <fieldset><legend data-i18n="tools">Tools</legend>
-        <label class="check"><input type="checkbox" name="computer_use"> Computer control (screen, mouse, keyboard)</label>
-        <label>Screenshots <select name="capture_mode"></select><small class="muted">window = focused window only · screen = whole screen; the taskbar is never included</small></label>
-        <label class="check"><input type="checkbox" name="confirm_computer_actions"> Ask before every mouse/keyboard action</label>
-        <label class="check"><input type="checkbox" name="control_indicator"> Show a border and Claude's pointer while it controls the computer</label>
-        <small class="muted">Press Esc on your keyboard at any time to stop it.</small>
-        <label>Monitor <input type="number" name="monitor" min="1" max="8"></label>
-        <label>Screenshot long edge (px) <input type="number" name="max_screenshot_edge" min="640" max="2000"></label>
-        <label>PowerShell commands <select name="shell_mode"></select></label>
-        <label>File edits <select name="file_tools_mode"></select><small class="muted">Reading files asks once per folder.</small></label>
-        <label class="check"><input type="checkbox" name="web_search"> Web search</label>
+        <label class="check"><input type="checkbox" name="computer_use"> <span data-i18n="set_computer_use">Computer control (screen, mouse, keyboard)</span></label>
+        <label><span data-i18n="set_capture_mode">Screenshots</span> <select name="capture_mode"></select><small class="muted" data-i18n="set_capture_note">Active app = the focused window only · Full screen = the whole screen. The taskbar is never included.</small></label>
+        <label class="check"><input type="checkbox" name="confirm_computer_actions"> <span data-i18n="set_confirm_actions">Ask before every mouse/keyboard action</span></label>
+        <small class="muted" data-i18n="set_esc_note">While Claude controls the computer, a border and Claude's pointer are shown. Press Esc on your keyboard at any time to stop it.</small>
+        <label><span data-i18n="set_monitor">Monitor</span> <input type="number" name="monitor" min="1" max="8"></label>
+        <label><span data-i18n="set_screenshot_edge">Screenshot long edge (px)</span> <input type="number" name="max_screenshot_edge" min="640" max="2000"></label>
+        <label><span data-i18n="set_shell_mode">PowerShell commands</span> <select name="shell_mode"></select></label>
+        <label><span data-i18n="set_file_mode">File edits</span> <select name="file_tools_mode"></select><small class="muted" data-i18n="set_file_note">Reading files asks once per folder.</small></label>
+        <label class="check"><input type="checkbox" name="web_search"> <span data-i18n="set_web_search">Web search</span></label>
         <small class="muted" data-i18n="toolsNote">Tool changes apply to the next new chat.</small>
       </fieldset>
       <fieldset><legend data-i18n="windowLegend">Window</legend>
@@ -175,13 +174,16 @@
           <small class="muted" data-i18n="windowNote">Applies the next time you start the app.</small></label>
       </fieldset>
       <fieldset><legend data-i18n="memory">Memory</legend>
-        <label class="check"><input type="checkbox" name="memory_enabled"> Persistent memory</label>
-        <label class="check"><input type="checkbox" name="memory_pass"> Review &amp; update memory after each request</label>
-        <label>Memory reviewer model <input name="memory_pass_model" list="modelList"></label>
+        <label class="check"><input type="checkbox" name="memory_enabled"> <span data-i18n="set_memory_enabled">Persistent memory</span></label>
+        <label class="check"><input type="checkbox" name="memory_pass"> <span data-i18n="set_memory_pass">Review &amp; update memory after each request</span></label>
+        <label><span data-i18n="set_memory_model">Memory reviewer model</span> <input name="memory_pass_model" list="modelList"></label>
       </fieldset>
-      <fieldset><legend>Context</legend>
-        <label>Clear old tool results after (input tokens) <input type="number" name="context_clear_trigger" min="20000" step="10000"></label>
-        <label>Keep most recent tool results <input type="number" name="context_keep_tool_uses" min="1" max="50"></label>
+      <fieldset><legend data-i18n="set_context">Context</legend>
+        <label class="check"><input type="checkbox" name="auto_compact"> <span data-i18n="set_auto_compact">Auto compact long chats</span></label>
+        <label><span data-i18n="set_compact_trigger">Compact when the context reaches (tokens)</span> <input type="number" name="compact_trigger" min="50000" max="800000" step="10000">
+          <small class="muted" data-i18n="set_compact_note">Older messages are summarized so the chat can keep going. The summary replaces them for the agent; you still see the whole chat.</small></label>
+        <label><span data-i18n="set_clear_trigger">Clear old tool results after (input tokens)</span> <input type="number" name="context_clear_trigger" min="20000" step="10000"></label>
+        <label><span data-i18n="set_keep_tools">Keep most recent tool results</span> <input type="number" name="context_keep_tool_uses" min="1" max="50"></label>
       </fieldset>
       <datalist id="modelList"></datalist>
     </div>

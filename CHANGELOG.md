@@ -2,6 +2,25 @@
 
 All notable changes to Polyglot Agent. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] - 2026-10-14
+
+### Added
+- **Auto compact.** Once a chat's context reaches 150k tokens (Settings → Context), the API
+  summarizes the older messages (server-side compaction, `compact-2026-01-12`) and the agent continues
+  from the summary. The summary prompt asks it to keep the task state: requests, decisions, paths, results
+  and next steps. A divider marks the spot in the chat; click it to read the summary (in English). The
+  status pill shows "Compacting context" while it is written, and its token cost is listed as
+  *Auto compact* in the usage panel. Messages before the summary are dropped from later requests, since
+  the API ignores them anyway. If the model or account doesn't support compaction, the app says so once
+  and continues without it.
+
+### Changed
+- **The "Claude is using your computer" border and pointer are always on.** The setting that turned
+  them off is gone, and a saved "off" from an older version is ignored.
+- **The Settings panel is translated.** Every label, note and option (model, effort, max tokens /
+  reply, approval modes, screenshot range, and so on) follows the app language. In Chinese, effort
+  levels and approval modes show Chinese names; the values sent to the API are unchanged.
+
 ## [0.5.1] - 2026-10-13
 
 ### Changed

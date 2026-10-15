@@ -77,6 +77,9 @@ class StreamAccumulator:
                 cits = block.get("citations") or []
                 cits.append(d["citation"])
                 block["citations"] = cits
+            elif dt == "compaction_delta":
+                # the whole summary arrives in one delta; keep its fields exactly as sent
+                block.update({k: v for k, v in d.items() if k != "type"})
         elif t == "content_block_stop":
             idx = ev["index"]
             if idx in self._partial_json:
