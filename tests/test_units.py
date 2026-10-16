@@ -270,7 +270,7 @@ def test_window_frame_coordinate_mapping():
 def test_desktop_detects_a_dead_previous_instance(monkeypatch, tmp_path):
     import socket
     from app import desktop
-    monkeypatch.setattr(desktop.config, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(desktop.config, "STATE_DIR", tmp_path)
     assert not desktop._server_alive()                     # no running.json
     s = socket.socket()
     s.bind(("127.0.0.1", 0))
@@ -345,7 +345,7 @@ def test_app_browser_preference_and_separate_profiles(monkeypatch, tmp_path):
     assert desktop.find_app_browser("chrome").endswith("msedge.exe")      # falls back to Edge
 
     launched = []
-    monkeypatch.setattr(desktop.config, "DATA_DIR", tmp_path / "data")
+    monkeypatch.setattr(desktop.config, "STATE_DIR", tmp_path / "data")
     monkeypatch.setattr(desktop.subprocess, "Popen", lambda args: launched.append(args) or "proc")
     for exe in ("C:/x/chrome.exe", "C:/x/msedge.exe"):
         monkeypatch.setattr(desktop, "find_app_browser", lambda prefer, exe=exe: exe)
@@ -382,3 +382,83 @@ def test_control_overlay_hook_swallows_only_physical_escape():
     assert o._on_key(0, 0x100, ctypes.addressof(physical)) == 1 and hits == [1]
     assert o._on_key(0, 0x100, ctypes.addressof(physical)) == 1 and hits == [1]   # key repeat: once
     assert o._on_key(0, 0x101, ctypes.addressof(physical)) == 1                   # its key-up too
+
+
+def test_data_folder_location(monkeypatch, tmp_path):
+    import shutil
+
+    import pytest
+
+    from app import config
+    monkeypatch.setattr(config, "_ENV_DIR", None)
+    monkeypatch.setattr(config, "STATE_DIR", tmp_path / "state")
+    monkeypatch.setattr(config, "LOCATION_FILE", tmp_path / "state" / "data-location.json")
+    monkeypatch.setattr(config, "DATA_DIR", config.DATA_DIR)          # restored after the test
+    monkeypatch.setattr(config, "FROZEN", True)
+    assert config._initial_data_dir() is None                        # standalone, first start: ask
+    monkeypatch.setattr(config, "FROZEN", False)
+    assert config._initial_data_dir() == tmp_path / "state"           # app folder: data\ as before
+    config.set_data_dir(tmp_path / "mine")
+    assert config.DATA_DIR == tmp_path / "mine" and config._initial_data_dir() == tmp_path / "mine"
+    shutil.rmtree(tmp_path / "mine")                                  # e.g. an unplugged drive
+    assert config._initial_data_dir() is None and config.saved_data_dir() == tmp_path / "mine"
+
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert config.data_target(str(empty)) == empty
+    busy = tmp_path / "busy"
+    busy.mkdir()
+    (busy / "x.txt").write_text("x")
+    assert config.data_target(str(busy)) == busy / "Polyglot Agent"  # don't mix with other files
+    (busy / "chats").mkdir()
+    assert config.data_target(str(busy)) == busy                      # already holds the app's data
+    (tmp_path / "state" / "app.log").write_text("log")
+    assert config.data_target(str(tmp_path / "state")) == tmp_path / "state"
+    assert config.data_target(str(tmp_path / "new" / "sub")) == tmp_path / "new" / "sub"
+    for bad in ("", "relative/path", str(busy / "x.txt")):
+        with pytest.raises(ValueError):
+            config.data_target(bad)
+
+
+def test_computer_control_is_off_by_default():
+    s = Settings()
+    assert s.computer_use is False
+    assert apply_updates(s, {"computer_use": True}).computer_use is True    # the user turns it on
+
+
+def test_display_list_for_settings():
+    from app.computer import describe_displays, primary_index
+
+    def mon(left, top, w, h):
+        return {"left": left, "top": top, "width": w, "height": h}
+    # Windows lists the right-hand screen first here; the main one sits at (0, 0)
+    mons = [mon(-1920, -400, 6400, 1840), mon(2560, 0, 1920, 1080), mon(0, 0, 2560, 1440),
+            mon(-1920, 0, 1920, 1080), mon(400, -1080, 1920, 1080)]
+    assert primary_index(mons) == 2
+    assert describe_displays(mons) == [
+        {"index": 1, "width": 1920, "height": 1080, "position": "right"},
+        {"index": 2, "width": 2560, "height": 1440, "position": "primary"},
+        {"index": 3, "width": 1920, "height": 1080, "position": "left"},
+        {"index": 4, "width": 1920, "height": 1080, "position": "above"},
+    ]
+    one = [mon(0, 0, 2560, 1440), mon(0, 0, 2560, 1440)]
+    assert describe_displays(one) == [{"index": 1, "width": 2560, "height": 1440, "position": "primary"}]
+    assert describe_displays([]) == [] and Settings().monitor == 0     # 0 = the main display
+
+
+def test_monitor_setting_falls_back_to_the_main_display(monkeypatch):
+    from app import computer
+    from app.computer import LocalComputer
+    mons = [{"left": 0, "top": 0, "width": 4480, "height": 1440},
+            {"left": 2560, "top": 0, "width": 1920, "height": 1080},
+            {"left": 0, "top": 0, "width": 2560, "height": 1440}]
+
+    class FakeMss:
+        monitors = mons
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+    monkeypatch.setattr(computer, "open_mss", FakeMss)
+    c = LocalComputer.__new__(LocalComputer)
+    for setting, rect in ((0, (0, 0, 2560, 1440)), (7, (0, 0, 2560, 1440)), (1, (2560, 0, 4480, 1080))):
+        c.monitor = setting
+        assert c._monitor_rect() == rect

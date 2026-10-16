@@ -15,4 +15,4 @@ if (-not (Test-Path .build-venv)) {
 .\.build-venv\Scripts\python.exe -m pip install --upgrade pip
 .\.build-venv\Scripts\python.exe -m pip install -r requirements.txt pyinstaller
 .\.build-venv\Scripts\python.exe -m PyInstaller --noconfirm --clean PolyglotAgent.spec
-Write-Host "`nBuilt dist\PolyglotAgent.exe (data is stored in %LOCALAPPDATA%\PolyglotAgent)"
+Write-Host "`nBuilt dist\PolyglotAgent.exe (on first start it asks where to keep your data)"

@@ -1,6 +1,7 @@
 """Desktop entry point used by PolyglotAgent.exe.
 
-- no console window (run with pythonw / as a windowed exe); logs go to data/app.log
+- no console window (run with pythonw / as a windowed exe); logs go to app.log in
+  config.STATE_DIR (this PC's app state, next to the lock file and window cache)
 - one instance at a time; launching again just brings the window to the front
 - the UI opens in a window chosen in Settings (window_mode, applied at launch):
   app     built-in window on WebView2, the Chromium engine that ships with
@@ -45,8 +46,8 @@ def _redirect_output() -> None:
     """pythonw / windowed exes have no stdout; uvicorn would crash writing logs."""
     if sys.stdout is not None and sys.stderr is not None:
         return
-    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    log = open(config.DATA_DIR / "app.log", "w", encoding="utf-8", buffering=1)
+    config.STATE_DIR.mkdir(parents=True, exist_ok=True)
+    log = open(config.STATE_DIR / "app.log", "w", encoding="utf-8", buffering=1)
     sys.stdout = sys.stdout or log
     sys.stderr = sys.stderr or log
 
@@ -78,7 +79,7 @@ def _first_instance() -> bool:
 def _server_alive() -> bool:
     """True if the running instance's server accepts connections."""
     try:
-        info = json.loads((config.DATA_DIR / "running.json").read_text(encoding="utf-8"))
+        info = json.loads((config.STATE_DIR / "running.json").read_text(encoding="utf-8"))
         port = urllib.parse.urlsplit(info["url"]).port
         with socket.create_connection(("127.0.0.1", port), timeout=1):
             return True
@@ -104,7 +105,7 @@ def _hard_exit() -> None:
     """End the process now: also stops worker threads that would otherwise keep it
     (and the single-instance lock) alive, e.g. a PowerShell command still running."""
     try:
-        (config.DATA_DIR / "running.json").unlink()
+        (config.STATE_DIR / "running.json").unlink()
     except OSError:
         pass
     for f in (sys.stdout, sys.stderr):
@@ -139,7 +140,7 @@ def _focus_existing() -> None:
         except Exception:  # noqa: BLE001
             pass
     try:  # window not found (browser mode): reopen the running instance's URL
-        info = json.loads((config.DATA_DIR / "running.json").read_text(encoding="utf-8"))
+        info = json.loads((config.STATE_DIR / "running.json").read_text(encoding="utf-8"))
         webbrowser.open(info["url"])
     except Exception:  # noqa: BLE001
         pass
@@ -180,7 +181,7 @@ def _open_app_window(url: str, prefer: str = "edge") -> Optional[subprocess.Pope
     if not exe:
         return None
     # one private profile per browser: Edge and Chrome profiles are not interchangeable
-    profile = config.DATA_DIR / ("window-profile-chrome" if exe.lower().endswith("chrome.exe")
+    profile = config.STATE_DIR / ("window-profile-chrome" if exe.lower().endswith("chrome.exe")
                                  else "window-profile")
     args = [exe, f"--app={url}", f"--user-data-dir={profile}", "--no-first-run",
             "--no-default-browser-check", "--disable-background-mode", "--window-size=1320,880"]
@@ -259,7 +260,7 @@ def _app_window(srv, url: str) -> None:
         _request_exit(srv)
         window.destroy()
     server.state.shutdown = quit_app
-    webview.start(gui="edgechromium", private_mode=False, storage_path=str(config.DATA_DIR / "webview"),
+    webview.start(gui="edgechromium", private_mode=False, storage_path=str(config.STATE_DIR / "webview"),
                   icon=str(APP_ICON) if APP_ICON.is_file() else None)
 
 
@@ -295,8 +296,8 @@ def main() -> None:
                                         timeout_graceful_shutdown=SHUTDOWN_GRACE_SECONDS))
     server.state.shutdown = lambda: _request_exit(srv)
 
-    running = config.DATA_DIR / "running.json"
-    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    running = config.STATE_DIR / "running.json"
+    config.STATE_DIR.mkdir(parents=True, exist_ok=True)
     running.write_text(json.dumps({"url": url, "pid": os.getpid()}), encoding="utf-8")
     mode = "browser" if args.browser else server.state.settings.window_mode
     print(f"{config.APP_NAME} at {url} (window: {mode})", flush=True)

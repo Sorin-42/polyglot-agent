@@ -29,6 +29,7 @@ def test_token_and_origin_checks():
             hello = ws.receive_json()
             assert hello["type"] == "hello" and "languages" in hello["meta"]
             assert hello["meta"]["window_modes"] == ["app", "edge", "chrome", "browser"]
+            assert isinstance(hello["meta"]["displays"], list)
 
 
 def test_settings_and_memory_api():
@@ -182,3 +183,59 @@ def test_static_assets_are_versioned():
     refs = _re.findall(r'(?:src|href)="(/static/[^"]+)"', page)
     assert refs and all(r.endswith("?v=" + server._asset_version()) for r in refs)
     assert "/static/app.js?v=" in page and "/static/style.css?v=" in page
+
+
+def test_first_start_asks_for_a_data_folder_then_switches(monkeypatch, tmp_path):
+    """Standalone first start: nothing runs until a data folder is chosen. Changing it
+    later copies the data into an empty folder and uses a folder with data as it is."""
+    from app import config
+    state_dir = tmp_path / "state"
+    monkeypatch.setattr(config, "STATE_DIR", state_dir)
+    monkeypatch.setattr(config, "LOCATION_FILE", state_dir / "data-location.json")
+    monkeypatch.setattr(config, "DATA_DIR_FIXED", False)
+    monkeypatch.setattr(config, "DATA_DIR", None)
+    monkeypatch.setattr(server.state, "settings", config.load_settings())
+    docs = tmp_path / "Docs"
+    docs.mkdir()
+    (docs / "report.txt").write_text("not ours")
+    picked = []
+    monkeypatch.setattr(server.folder_picker, "pick_folder",
+                        lambda title, initial: picked.append((title, initial)) or str(docs))
+    h = {"X-Token": server.TOKEN}
+    ws_url = f"ws://127.0.0.1:8765/ws?token={server.TOKEN}"
+    origin = {"origin": "http://127.0.0.1:8765"}
+    first = docs / "Polyglot Agent"      # Docs holds other files, so the data gets its own folder
+
+    with TestClient(server.app, base_url="http://127.0.0.1:8765") as c:
+        assert server.state.session is None
+        assert c.get("/api/memory", headers=h).status_code == 409
+        assert c.post("/api/settings", headers=h, json={"language": "English"}).status_code == 409
+        path = c.post("/api/pick-folder", headers=h, json={"title": "Pick", "initial": ""}).json()["path"]
+        assert path == str(docs) and picked == [("Pick", None)]
+        prev = c.post("/api/data-dir/preview", headers=h, json={"path": path}).json()
+        assert prev == {"target": str(first), "existing": False, "current": False}
+        with c.websocket_connect(ws_url, headers=origin) as ws:
+            hello = ws.receive_json()
+            assert hello["setup"] == {"suggested": str(state_dir), "missing": ""} and "chat" not in hello
+            assert c.post("/api/data-dir", headers=h, json={"path": path}).json() == \
+                {"data_dir": str(first), "copied": False}
+            hello = ws.receive_json()       # the window starts over with the new folder
+            assert "setup" not in hello and hello["meta"]["data_dir"] == str(first) and "chat" in hello
+        assert json.loads(config.LOCATION_FILE.read_text(encoding="utf-8")) == {"data_dir": str(first)}
+        assert c.post("/api/settings", headers=h, json={"language": "English"}).status_code == 200
+        c.put("/api/memory/file", headers=h, json={"path": "/memories/notes.md", "content": "- likes tea"})
+        assert (first / "settings.json").is_file() and (first / "memories" / "notes.md").is_file()
+        assert not (state_dir / "settings.json").exists()
+
+        second = tmp_path / "Second"
+        assert c.post("/api/data-dir", headers=h, json={"path": str(second)}).json() == \
+            {"data_dir": str(second), "copied": True}
+        assert (second / "memories" / "notes.md").read_text(encoding="utf-8") == "- likes tea"
+        assert (first / "memories" / "notes.md").is_file()          # the old folder is kept
+        assert server.state.settings.language == "English"
+        got = c.get("/api/memory/file", headers=h, params={"path": "/memories/notes.md"}).json()
+        assert got["content"] == "- likes tea"
+        # a folder that already holds data is used as it is
+        assert c.post("/api/data-dir", headers=h, json={"path": str(first)}).json() == \
+            {"data_dir": str(first), "copied": False}
+        assert c.post("/api/data-dir", headers=h, json={"path": "relative"}).status_code == 400

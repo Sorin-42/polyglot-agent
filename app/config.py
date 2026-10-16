@@ -3,24 +3,102 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sys
 import threading
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
+from typing import Optional
 
 APP_NAME = "Polyglot Agent"
 ROOT = Path(__file__).resolve().parent.parent
 FROZEN = bool(getattr(sys, "frozen", False))   # single-file exe built with PyInstaller
 
 
-def _default_data_dir() -> Path:
-    if FROZEN:  # the standalone exe can live anywhere; keep data in the user profile
+def _default_state_dir() -> Path:
+    if FROZEN:  # the standalone exe can live anywhere; keep its state in the user profile
         base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
         return Path(base) / "PolyglotAgent"
     return ROOT / "data"
 
 
-DATA_DIR = Path(os.environ.get("POLYGLOT_DATA_DIR") or _default_data_dir())
+_ENV_DIR = os.environ.get("POLYGLOT_DATA_DIR")
+DATA_DIR_FIXED = bool(_ENV_DIR)          # POLYGLOT_DATA_DIR wins over the folder chosen in the app
+# This PC's app state: single-instance lock, log, window cache, and where the data folder is.
+STATE_DIR = Path(_ENV_DIR or _default_state_dir())
+LOCATION_FILE = STATE_DIR / "data-location.json"
+# The user's data. These are copied when the data folder changes; any of them marks a
+# folder as already holding this app's data.
+DATA_ENTRIES = ("settings.json", "memories", "memories-backups", "chats", "projects")
+
+
+def saved_data_dir() -> Optional[Path]:
+    """The data folder chosen earlier (it may since have gone missing, e.g. an unplugged drive)."""
+    try:
+        p = json.loads(LOCATION_FILE.read_text(encoding="utf-8"))["data_dir"]
+        return Path(p) if p else None
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def _initial_data_dir() -> Optional[Path]:
+    if _ENV_DIR:
+        return Path(_ENV_DIR)
+    saved = saved_data_dir()
+    if saved is not None:
+        return saved if saved.is_dir() else None     # gone: ask again
+    return None if FROZEN else STATE_DIR             # the standalone exe asks on first start
+
+
+# Settings, memory, chats and projects. None until the user has chosen a folder.
+DATA_DIR: Optional[Path] = _initial_data_dir()
+
+
+def has_app_data(path: Path) -> bool:
+    return any((path / name).exists() for name in DATA_ENTRIES)
+
+
+def same_path(a: Path, b: Path) -> bool:
+    return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+
+
+def data_target(picked: str) -> Path:
+    """The folder the data goes in when the user picks `picked`: the folder itself if it
+    is new, empty, this PC's app folder or already holds this app's data; otherwise a
+    "Polyglot Agent" folder inside it, so the app's files don't mix with others."""
+    p = Path(picked.strip()).expanduser() if picked.strip() else None
+    if p is None or not p.is_absolute():
+        raise ValueError("Choose a folder.")
+    if p.exists() and not p.is_dir():
+        raise ValueError(f"{p} is a file, not a folder.")
+    if not p.exists() or same_path(p, STATE_DIR) or has_app_data(p) or not any(p.iterdir()):
+        return p
+    return p / APP_NAME
+
+
+def copy_data(src: Path, dst: Path) -> None:
+    """Copy the user's data (not this PC's app state) into another folder."""
+    dst.mkdir(parents=True, exist_ok=True)
+    for name in DATA_ENTRIES:
+        s = src / name
+        if s.is_dir():
+            shutil.copytree(s, dst / name, dirs_exist_ok=True)
+        elif s.is_file():
+            shutil.copy2(s, dst / name)
+
+
+def set_data_dir(path: Path) -> None:
+    """Use `path` as the data folder (created if needed) and remember it for later launches."""
+    global DATA_DIR
+    path.mkdir(parents=True, exist_ok=True)
+    probe = path / ".write-test"
+    probe.write_text("ok", encoding="utf-8")       # fail now, not on the first save
+    probe.unlink()
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = LOCATION_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"data_dir": str(path)}, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(LOCATION_FILE)
+    DATA_DIR = path
 
 MODELS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-1"]
 EFFORTS = ["low", "medium", "high", "xhigh", "max"]
@@ -82,8 +160,8 @@ class Settings:
     translator_effort: str = "low"
     show_original: bool = False            # show English under translations
     # tools
-    computer_use: bool = True
-    monitor: int = 1                       # mss monitor index (1 = primary)
+    computer_use: bool = False             # off until the user turns it on (Settings → Tools)
+    monitor: int = 0                       # display to control: mss index, 0 = the main display
     capture_mode: str = "window"           # window = focused window only; screen = work area
     max_screenshot_edge: int = 1568        # long edge sent to the model
     confirm_computer_actions: bool = False
@@ -123,8 +201,10 @@ def settings_path() -> Path:
 
 
 def load_settings() -> Settings:
-    p = settings_path()
     s = Settings()
+    if DATA_DIR is None:      # no data folder chosen yet: defaults until there is one
+        return s
+    p = settings_path()
     if p.exists():
         try:
             raw = json.loads(p.read_text(encoding="utf-8"))
@@ -171,6 +251,8 @@ def apply_updates(s: Settings, updates: dict) -> Settings:
 
 
 def save_settings(s: Settings) -> None:
+    if DATA_DIR is None:
+        raise RuntimeError("No data folder has been chosen yet.")
     with _lock:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         tmp = settings_path().with_suffix(".tmp")

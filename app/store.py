@@ -72,7 +72,7 @@ class Store:
         return project
 
     def delete_project(self, pid: str) -> None:
-        """Deletes the project; its chats become random chats."""
+        """Deletes the project; its chats move to the Chats list (no project)."""
         self._check(pid)
         for meta in self.list_chats():
             if meta.get("project_id") == pid:

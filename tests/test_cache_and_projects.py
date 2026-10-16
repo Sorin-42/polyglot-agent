@@ -46,7 +46,7 @@ def test_translation_never_touches_cached_prefix(monkeypatch, tmp_path):
                               "toolset_name": "computer", "input": {}}], "tool_use")
         return _stream([THINK, {"type": "text", "text": f"Answer {len(main)}."}])
 
-    settings = Settings(api_key="k", language="简体中文", shell_mode="off", memory_pass=True)
+    settings = Settings(api_key="k", language="简体中文", shell_mode="off", memory_pass=True, computer_use=True)
     settings._auto_answer = True
     events = []
 
@@ -171,7 +171,7 @@ def test_chats_projects_and_usage(monkeypatch, tmp_path):
         await sess.submit("你好", [])
         await sess.turn_task
         cid = sess.chat["id"]
-        await sess.new_chat(None)                  # random chat, never used -> not saved
+        await sess.new_chat(None)                  # chat outside any project, never used -> not saved
         await sess.close()
         return p, cid
 
@@ -185,7 +185,7 @@ def test_chats_projects_and_usage(monkeypatch, tmp_path):
     assert tu["usage"]["translator"]["calls"] == 2
     assert tu["context"]["window"] == 1_000_000 and tu["context"]["used"] == 150
     store.delete_project(p["id"])
-    assert store.list_chats()[0]["project_id"] is None   # chats survive as random chats
+    assert store.list_chats()[0]["project_id"] is None   # chats survive, outside any project
 
 
 def _capture_flow(monkeypatch, answer, start_mode="window"):
@@ -202,7 +202,8 @@ def _capture_flow(monkeypatch, answer, start_mode="window"):
                              "toolset_name": "computer", "input": {}}], "tool_use")
         return _stream([{"type": "text", "text": "ok"}])
 
-    settings = Settings(api_key="k", language="English", memory_pass=False, capture_mode=start_mode)
+    settings = Settings(api_key="k", language="English", memory_pass=False, capture_mode=start_mode,
+                        computer_use=True)
     settings._auto_answer = answer
 
     async def run():

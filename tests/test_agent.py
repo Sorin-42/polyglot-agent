@@ -93,7 +93,8 @@ def test_full_turn_translates_and_keeps_agent_english(monkeypatch):
                                                  "Nothing else is open."}])
 
     events = []
-    settings = Settings(api_key="sk-test", language="简体中文", shell_mode="off", file_tools_mode="off")
+    settings = Settings(api_key="sk-test", language="简体中文", shell_mode="off", file_tools_mode="off",
+                        computer_use=True)
     settings._auto_answer = True
 
     async def run():
@@ -355,7 +356,7 @@ def test_control_signal_shows_while_acting(monkeypatch, fake_overlay):
     monkeypatch.setattr(agent_mod, "LocalComputer", FakeComputer)
     main_bodies, events = [], []
     settings = Settings(api_key="sk-test", language="English", memory_pass=False, shell_mode="off",
-                        file_tools_mode="off", web_search=False)
+                        file_tools_mode="off", web_search=False, computer_use=True)
     settings._auto_answer = True
 
     async def run():
@@ -388,7 +389,7 @@ def test_escape_stops_the_agent(monkeypatch, fake_overlay):
     monkeypatch.setattr(agent_mod, "LocalComputer", SlowComputer)
     main_bodies, events = [], []
     settings = Settings(api_key="sk-test", language="English", memory_pass=False, shell_mode="off",
-                        file_tools_mode="off", web_search=False)
+                        file_tools_mode="off", web_search=False, computer_use=True)
     settings._auto_answer = True
 
     async def run():

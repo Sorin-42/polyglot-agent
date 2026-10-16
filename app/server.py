@@ -5,6 +5,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import os
 import re
 import secrets
 from contextlib import asynccontextmanager
@@ -17,9 +18,10 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from . import config
+from . import config, folder_picker
 from .agent import MemoryBusy, Session
 from .api import APIError
+from .computer import list_displays
 from .memory_store import MemoryError_
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -56,9 +58,12 @@ state.settings = config.load_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    state.session = Session(lambda: state.settings, hub.broadcast)
+    if config.DATA_DIR is not None:   # otherwise it starts once the user has chosen a folder
+        state.session = Session(lambda: state.settings, hub.broadcast)
     yield
-    await state.session.close()
+    if state.session is not None:
+        await state.session.close()
+        state.session = None
 
 
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
@@ -84,12 +89,37 @@ def _origin_ok(origin: Optional[str]) -> bool:
     return origin in (f"http://127.0.0.1:{state.port}", f"http://localhost:{state.port}")
 
 
+def _session() -> Session:
+    if state.session is None:
+        raise HTTPException(409, "Choose a folder for your data first.")
+    return state.session
+
+
 def _meta() -> dict:
     return {"models": config.MODELS, "efforts": config.EFFORTS, "languages": config.LANGUAGES,
             "approval_modes": config.APPROVAL_MODES, "capture_modes": config.CAPTURE_MODES,
             "window_modes": config.WINDOW_MODES,
-            "app_name": config.APP_NAME, "data_dir": str(config.DATA_DIR),
-            "desktop": state.shutdown is not None}
+            "app_name": config.APP_NAME, "data_dir": str(config.DATA_DIR or ""),
+            "data_dir_fixed": config.DATA_DIR_FIXED, "desktop": state.shutdown is not None,
+            "displays": list_displays()}      # read each time: screens can be plugged in or out
+
+
+def _setup() -> dict:
+    """First start (or the data folder went missing): what to suggest."""
+    saved = config.saved_data_dir()
+    suggested = saved or config.STATE_DIR
+    return {"suggested": str(suggested),
+            "missing": str(saved) if saved is not None and not saved.is_dir() else ""}
+
+
+def _hello() -> dict:
+    ev = {"type": "hello", "settings": state.settings.public_dict(), "meta": _meta()}
+    sess = state.session
+    if sess is None:
+        return {**ev, "setup": _setup()}
+    return {**ev, "chat": sess.chat_meta(), "history": sess.display, "busy": sess.busy,
+            "state": sess.state if sess.busy else "idle", **sess.usage_payload(), **sess.sidebar(),
+            "pending_approvals": list(sess.pending_approvals.values())}
 
 
 def _asset_version() -> str:
@@ -131,6 +161,7 @@ async def get_settings(request: Request):
 @app.post("/api/settings")
 async def post_settings(request: Request):
     _check(request)
+    _session()
     updates = await request.json()
     config.apply_updates(state.settings, updates)
     config.save_settings(state.settings)
@@ -143,7 +174,7 @@ async def post_settings(request: Request):
 @app.get("/api/memory")
 async def memory_tree(request: Request):
     _check(request)
-    mem = state.session.memory
+    mem = _session().memory
     return {"files": mem.tree(), "dir": str(mem.base), "undo": mem.latest_backup()}
 
 
@@ -151,7 +182,7 @@ async def memory_tree(request: Request):
 async def memory_read(request: Request, path: str):
     _check(request)
     try:
-        p = state.session.memory.resolve(path)
+        p = _session().memory.resolve(path)
     except MemoryError_ as e:
         raise HTTPException(400, str(e)) from None
     if not p.is_file():
@@ -164,8 +195,8 @@ async def memory_write(request: Request):
     _check(request)
     body = await request.json()
     try:
-        async with state.session._memory_lock:
-            state.session.memory.cmd_create({"path": body.get("path"), "file_text": body.get("content", "")})
+        async with _session()._memory_lock:
+            _session().memory.cmd_create({"path": body.get("path"), "file_text": body.get("content", "")})
     except MemoryError_ as e:
         raise HTTPException(400, str(e)) from None
     await hub.broadcast({"type": "memory_op", "source": "user", "command": "create", "path": body.get("path")})
@@ -180,10 +211,10 @@ async def memory_translate(request: Request):
         raise HTTPException(400, "Choose your language first.")
     body = await request.json()
     try:
-        text = await state.session.translate_memory(str(body.get("content") or "")[:100_000])
+        text = await _session().translate_memory(str(body.get("content") or "")[:100_000])
     except (APIError, httpx.HTTPError) as e:
         raise HTTPException(502, f"Translation failed: {getattr(e, 'message', None) or e}") from None
-    await hub.broadcast({"type": "usage", **state.session.usage_payload()})
+    await hub.broadcast({"type": "usage", **_session().usage_payload()})
     return {"text": text, "language": state.settings.language}
 
 
@@ -191,8 +222,8 @@ async def memory_translate(request: Request):
 async def memory_delete(request: Request, path: str):
     _check(request)
     try:
-        async with state.session._memory_lock:
-            state.session.memory.cmd_delete({"path": path})
+        async with _session()._memory_lock:
+            _session().memory.cmd_delete({"path": path})
     except MemoryError_ as e:
         raise HTTPException(400, str(e)) from None
     await hub.broadcast({"type": "memory_op", "source": "user", "command": "delete", "path": path})
@@ -202,8 +233,8 @@ async def memory_delete(request: Request, path: str):
 # Clean-up: every operation backs memory up first, and /undo puts the last backup back.
 async def _memory_cleaned(command: str, result: dict) -> dict:
     await hub.broadcast({"type": "memory_op", "source": "clean", "command": command, "path": "/memories"})
-    await hub.broadcast({"type": "usage", **state.session.usage_payload()})
-    return {**result, "undo": state.session.memory.latest_backup()}
+    await hub.broadcast({"type": "usage", **_session().usage_payload()})
+    return {**result, "undo": _session().memory.latest_backup()}
 
 
 @app.post("/api/memory/tidy")
@@ -211,14 +242,14 @@ async def memory_tidy(request: Request):
     """AI tidy-up: merge duplicates, drop stale lines. Undoable."""
     _check(request)
     try:
-        res = await state.session.tidy_memory()
+        res = await _session().tidy_memory()
     except MemoryBusy as e:
         raise HTTPException(409, str(e)) from None
     except (APIError, httpx.HTTPError, asyncio.TimeoutError) as e:
         why = getattr(e, "message", None) or str(e) or "timed out"
         raise HTTPException(502, f"Tidy-up failed; memory was restored. ({why})") from None
     try:  # the summary is English; show it in the user's language
-        res["summary"] = await state.session.translate_memory(res["summary"])
+        res["summary"] = await _session().translate_memory(res["summary"])
     except (APIError, httpx.HTTPError):
         pass
     return await _memory_cleaned("tidy", res)
@@ -229,7 +260,7 @@ async def memory_clear(request: Request):
     """Delete every memory file. Undoable."""
     _check(request)
     try:
-        res = await state.session.clear_memory()
+        res = await _session().clear_memory()
     except MemoryBusy as e:
         raise HTTPException(409, str(e)) from None
     return await _memory_cleaned("clear", res)
@@ -240,7 +271,7 @@ async def memory_undo(request: Request):
     """Restore memory from before the last tidy-up or clear."""
     _check(request)
     try:
-        restored = await state.session.undo_memory_clean()
+        restored = await _session().undo_memory_clean()
     except MemoryBusy as e:
         raise HTTPException(409, str(e)) from None
     if restored is None:
@@ -253,8 +284,89 @@ async def quit_app(request: Request):
     _check(request)
     if state.shutdown is None:
         return {"ok": False, "reason": "not running as a desktop app"}
-    await state.session.stop()
+    if state.session is not None:
+        await state.session.stop()
     asyncio.get_running_loop().call_later(0.3, state.shutdown)
+    return {"ok": True}
+
+
+# ------------------------------------------------------------ folders
+_picking = asyncio.Lock()
+
+
+@app.post("/api/pick-folder")
+async def pick_folder(request: Request):
+    """Open the native folder dialog (the page itself can't see real paths)."""
+    _check(request)
+    body = await request.json()
+    if _picking.locked():
+        raise HTTPException(409, "A folder window is already open.")
+    async with _picking:
+        try:
+            path = await asyncio.to_thread(folder_picker.pick_folder, str(body.get("title") or "")[:200],
+                                           str(body.get("initial") or "") or None)
+        except folder_picker.PickerUnavailable as e:
+            raise HTTPException(501, str(e)) from None
+        except OSError as e:
+            raise HTTPException(500, f"Couldn't open the folder window: {e}") from None
+    return {"path": path}
+
+
+def _data_target(body: dict) -> Path:
+    try:
+        return config.data_target(str(body.get("path") or ""))
+    except (ValueError, OSError) as e:
+        raise HTTPException(400, str(e)) from None
+
+
+@app.post("/api/data-dir/preview")
+async def data_dir_preview(request: Request):
+    """Where the data would go for a picked folder, and whether data is already there."""
+    _check(request)
+    target = _data_target(await request.json())
+    current = config.DATA_DIR is not None and config.same_path(target, config.DATA_DIR)
+    return {"target": str(target), "existing": config.has_app_data(target), "current": current}
+
+
+@app.post("/api/data-dir")
+async def data_dir_set(request: Request):
+    """Choose the data folder. On first start this starts the session. Later it switches:
+    a folder that already holds data is used as it is; otherwise the current data is
+    copied there first (the old folder is kept)."""
+    _check(request)
+    if config.DATA_DIR_FIXED:
+        raise HTTPException(409, "The data folder is set by POLYGLOT_DATA_DIR.")
+    target = _data_target(await request.json())
+    old = state.session
+    if old is not None:
+        if config.same_path(target, config.DATA_DIR):
+            return {"data_dir": str(config.DATA_DIR), "copied": False}
+        try:
+            old._check_memory_idle()
+        except MemoryBusy as e:
+            raise HTTPException(409, str(e)) from None
+    copied = old is not None and not config.has_app_data(target)
+    try:
+        if copied:
+            await asyncio.to_thread(config.copy_data, config.DATA_DIR, target)
+        config.set_data_dir(target)
+    except OSError as e:
+        raise HTTPException(400, f"Can't use this folder: {e}") from None
+    if old is not None:
+        await old.close()
+    state.settings = config.load_settings()
+    state.session = Session(lambda: state.settings, hub.broadcast)
+    await hub.broadcast(_hello())          # every window starts over from the new folder
+    return {"data_dir": str(target), "copied": copied}
+
+
+@app.post("/api/data-dir/open")
+async def data_dir_open(request: Request):
+    """Show the data folder in Explorer."""
+    _check(request)
+    if config.DATA_DIR is None or not hasattr(os, "startfile"):
+        raise HTTPException(400, "Nothing to open.")
+    os.startfile(config.DATA_DIR)  # noqa: S606 - our own folder
     return {"ok": True}
 
 
@@ -270,20 +382,20 @@ def _clean_project_fields(body: dict, project: dict) -> dict:
 
 
 async def _broadcast_sidebar() -> None:
-    await hub.broadcast({"type": "sidebar", **state.session.sidebar()})
+    await hub.broadcast({"type": "sidebar", **_session().sidebar()})
 
 
 @app.get("/api/projects")
 async def projects_list(request: Request):
     _check(request)
-    return state.session.sidebar()
+    return _session().sidebar()
 
 
 @app.post("/api/projects")
 async def project_create(request: Request):
     _check(request)
     body = await request.json()
-    proj = state.session.store.save_project(_clean_project_fields(body, {"name": "Untitled project"}))
+    proj = _session().store.save_project(_clean_project_fields(body, {"name": "Untitled project"}))
     await _broadcast_sidebar()
     return proj
 
@@ -291,7 +403,7 @@ async def project_create(request: Request):
 @app.put("/api/projects/{pid}")
 async def project_update(request: Request, pid: str):
     _check(request)
-    store = state.session.store
+    store = _session().store
     try:
         proj = store.get_project(pid)
     except ValueError:
@@ -307,10 +419,10 @@ async def project_update(request: Request, pid: str):
 async def project_delete(request: Request, pid: str):
     _check(request)
     try:
-        state.session.store.delete_project(pid)
+        _session().store.delete_project(pid)
     except ValueError:
         raise HTTPException(400, "bad id") from None
-    sess = state.session
+    sess = _session()
     if sess.chat.get("project_id") == pid:
         sess.chat["project_id"] = None
         await hub.broadcast({"type": "chat_meta", "chat": sess.chat_meta()})
@@ -321,7 +433,7 @@ async def project_delete(request: Request, pid: str):
 @app.delete("/api/chats/{cid}")
 async def chat_delete(request: Request, cid: str):
     _check(request)
-    sess = state.session
+    sess = _session()
     try:
         sess.store.delete_chat(cid)
     except ValueError:
@@ -341,17 +453,17 @@ async def ws_endpoint(ws: WebSocket):
         return
     await ws.accept()
     hub.sockets.add(ws)
-    sess = state.session
-    await ws.send_text(json.dumps({
-        "type": "hello", "settings": state.settings.public_dict(), "meta": _meta(),
-        "chat": sess.chat_meta(), "history": sess.display, "busy": sess.busy,
-        "state": sess.state if sess.busy else "idle", **sess.usage_payload(), **sess.sidebar(),
-        "pending_approvals": list(sess.pending_approvals.values()),
-    }, ensure_ascii=False))
+    await ws.send_text(json.dumps(_hello(), ensure_ascii=False))
     try:
         while True:
             msg = json.loads(await ws.receive_text())
             t = msg.get("type")
+            if t == "ping":
+                await ws.send_text('{"type":"pong"}')
+                continue
+            sess = state.session      # looked up each time: it changes with the data folder
+            if sess is None:
+                continue              # no data folder chosen yet
             if t == "send":
                 text = str(msg.get("text", ""))[:100_000]
                 images = [i for i in (msg.get("images") or []) if isinstance(i, dict) and i.get("data")]
@@ -370,8 +482,6 @@ async def ws_endpoint(ws: WebSocket):
                     await sess.open_chat(str(msg.get("id")))
                 except ValueError:
                     pass
-            elif t == "ping":
-                await ws.send_text('{"type":"pong"}')
     except (WebSocketDisconnect, RuntimeError):
         pass
     finally:

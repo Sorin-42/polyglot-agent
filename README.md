@@ -11,10 +11,10 @@ A local computer-use assistant for Windows that you can talk to in any language.
 - **Main agent:** `claude-opus-5-5` at **high** effort, with adaptive thinking (summaries shown in the UI).
 - **Your language, chosen by you:** on first launch you pick your language from a list. The app never detects or guesses it from your text, browser or Windows settings. Change it any time in the top bar.
 - **Translation layer:** `claude-haiku-5-5` translates your message into English before the agent sees it, and translates the agent's English reply back into your language while it streams, one paragraph at a time.
-- **Tools:** computer control (`computer_toolset_20260801`: screenshots, zoom, mouse, keyboard), PowerShell, file view/edit, web search, and a persistent **memory** (`memory_20250818`).
-- **Memory:** the agent saves what it learns about you and your projects (PCB boards, codebases, lab setups, preferences) as it works. After each request, a background reviewer also updates `/memories`. You can browse and edit everything in the **Memory** panel. Memory is stored in English; click **Translate** there to read it in your language (read-only, cached; **Show original** to edit). **Tidy up** has an AI pass merge duplicates and drop outdated lines; **Clear all** deletes every memory file. Both save a backup first (in `data/memories-backups`, which the agent can't see), and **Undo** puts it back.
-- **Projects and chats:** each chat is either inside a project or a random chat. A project has a name, optional instructions for the agent, and a list of folders the agent may read. Chats are saved and can be reopened from the sidebar.
-- **Folder permission:** the first time the agent reads a file in a new folder, you choose *Allow this folder* (you can edit the folder, for example widening it to the project root), *Just this file* or *Deny*. After that, reads in that folder never ask again, in this chat and in every later chat of the same project.
+- **Tools:** computer control (`computer_toolset_20260801`: screenshots, zoom, mouse, keyboard; **off by default**, turn it on in ⚙ Settings → *Tools*), PowerShell, file view/edit, web search, and a persistent **memory** (`memory_20250818`).
+- **Memory:** the agent saves what it learns about you and your projects (PCB boards, codebases, lab setups, preferences) as it works. After each request, a background reviewer also updates `/memories`. You can browse and edit everything in the **Memory** panel. Memory is stored in English; click **Translate** there to read it in your language (read-only, cached; **Show original** to edit). **Tidy up** has an AI pass merge duplicates and drop outdated lines; **Clear all** deletes every memory file. Both save a backup first (in `memories-backups` in the data folder, which the agent can't see), and **Undo** puts it back.
+- **Projects and chats:** each chat is either inside a project or listed under **Chats**. A project has a name, optional instructions for the agent, and a list of folders the agent may read (added with **Add folder…**, which opens the Windows folder picker). Chats are saved and can be reopened from the sidebar.
+- **Folder permission:** the first time the agent reads a file in a new folder, you choose *Allow this folder* (click **Change…** to pick a wider folder with the Windows folder picker, for example the project root), *Just this file* or *Deny*. After that, reads in that folder never ask again, in this chat and in every later chat of the same project.
 - **Token usage:** the header meter shows how much of the context window is used and how much is left. Click it for a per-chat breakdown (agent, translator and memory review: input, cache hits, output, estimated cost). A one-line summary also follows every request.
 
 <table>
@@ -48,7 +48,7 @@ Translation happens only at the edges. The agent's transcript is append-only, an
 ### What the agent receives from your PC
 
 - **System prompt:** today's date, the project's name, instructions and readable folders, and a memory snapshot. Nothing about your language or the translation layer. It contains no OS version, hardware or screen details.
-- **Screen-sharing switch** (above the message box): **Active app** (the default) or **Full screen**. If the agent needs the full screen while you're on Active app, it has to ask and you approve or deny. Switching back to Active app never asks.
+- **Screen-sharing switch** (above the message box, shown while computer control is on): **Active app** (the default) or **Full screen**. If the agent needs the full screen while you're on Active app, it has to ask and you approve or deny. Switching back to Active app never asks.
 - **Screenshots (default):** only the focused window, plus any menu or dropdown it has open. The taskbar is never included. When the chat window itself is focused, no image is sent at all. The agent switches apps with a small `windows` tool (list/focus) instead of screenshotting the taskbar. *Screen* mode (in Settings, or requested by the agent for drag-and-drop) captures the whole screen minus the taskbar.
 - **Files:** only after you allow the folder, as described above.
 - **PowerShell output:** only for commands you approve (in the default *ask* mode).
@@ -62,6 +62,7 @@ Translation happens only at the edges. The agent's transcript is append-only, an
    - Closing the window quits the app. Launching it again while it's open brings the existing window to the front.
 3. Choose your language in the picker that appears (you can't send messages until you do).
 4. Open ⚙ Settings and paste your API key from https://platform.claude.com. Alternatively, set the `ANTHROPIC_API_KEY` environment variable before launching.
+5. Optional: to let the agent see your screen and use the mouse and keyboard, turn on *Computer control* in ⚙ Settings → *Tools*. It is off until you do, and it applies to the next new chat.
 
 Windows SmartScreen may warn the first time, because the exe isn't code-signed: click **More info → Run anyway**. You can avoid that by right-clicking the zip → **Properties** → **Unblock** before you unzip it.
 
@@ -75,7 +76,7 @@ To get a single `PolyglotAgent.exe` you can copy to any PC without Python, build
 powershell -ExecutionPolicy Bypass -File tools\build_exe.ps1
 ```
 
-The result is `dist\PolyglotAgent.exe`, a single file you can copy to any Windows 10/11 PC: Python is inside it, and the window uses the WebView2 engine that Windows already has, so nothing else needs installing. The standalone exe keeps its data in `%LOCALAPPDATA%\PolyglotAgent`. The script builds with Python 3.13 (or 3.12/3.14) via the `py` launcher. You can also push this folder to GitHub and run the included **build-exe** Actions workflow, which builds the exe on a Windows runner.
+The result is `dist\PolyglotAgent.exe`, a single file you can copy to any Windows 10/11 PC: Python is inside it, and the window uses the WebView2 engine that Windows already has, so nothing else needs installing. On first start the standalone exe asks where to keep your data (memory, chats, projects and settings, including your API key): **Browse…** opens the Windows folder picker, or keep the suggested `%LOCALAPPDATA%\PolyglotAgent`. If you pick a folder that already holds other files, the data goes in a `Polyglot Agent` folder inside it; if it already holds Polyglot Agent data (for example from another PC), that data is used. Settings → *Data folder* shows where it is, opens it in Explorer, and can move it later: the current data is copied to the new folder and the old one is kept. If the folder goes missing (say, an unplugged drive), the app asks again. Only this PC's app state stays in `%LOCALAPPDATA%\PolyglotAgent` either way: the log, the single-instance lock, the window's browser cache, and a note of where the data folder is. The script builds with Python 3.13 (or 3.12/3.14) via the `py` launcher. You can also push this folder to GitHub and run the included **build-exe** Actions workflow, which builds the exe on a Windows runner.
 
 ### For developers
 
@@ -110,11 +111,12 @@ Your language is the one you chose in the top bar; the translator is told that l
 
 | Setting | Default | Notes |
 |---|---|---|
+| Computer control | off | Screen, mouse and keyboard. Turn it on in Settings → Tools; it applies to the next new chat. |
 | Model / Effort | `claude-opus-5-5` / `high` | Opus 5.5 defaults to *medium* when effort is omitted, so this app sets *high* explicitly. Use *xhigh* or *max* for hard tasks. |
 | Translator | `claude-haiku-5-5`, effort `low`, thinking off | Fast and cheap. Use `claude-sonnet-5-5` for harder technical prose. |
 | Screenshot long edge | 1568 px | Within the toolset limits (≤ 2000 px per side, ≤ 4784 visual tokens). Coordinates are scaled back to physical pixels. The agent can `zoom` to read small text. |
 | Screenshots | Active app | *Active app* = focused window only; *Full screen* = whole screen. The taskbar is excluded in both. |
-| Monitor | 1 | Which display to control. 1 is the primary. |
+| Display to control | main display | Shown only when more than one display is connected: a list of the displays with their size and where each sits (main display, on the left, …). If the chosen display is unplugged, the main display is used. |
 | Clear old tool results after | 100k input tokens | Server-side context editing removes old screenshots. Pruning on the client would invalidate Opus 5.5 thinking blocks. Memory results are never cleared. |
 | Auto compact | on, at 150k tokens | When the context reaches the trigger, the API summarizes the older messages (server-side compaction) and the agent continues from that summary. A divider marks the spot in the chat; click it to read the summary (in English). You still see the whole chat. The summarizing step shows up as *Auto compact* in the token usage. |
 | Memory reviewer | `claude-haiku-5-5` | Runs after each request. Turn it off to save tokens. |
@@ -142,9 +144,11 @@ app/computer.py         Windows controller (mss screenshots, pyautogui, SendInpu
 app/keys.py             xdotool-style key names → Windows keys
 app/memory_store.py     /memories backend with path-traversal protection
 app/local_tools.py      PowerShell + text editor tools
+app/folder_picker.py    native Windows folder picker (the page can't see real paths)
 app/prompts.py          agent / translator / memory-review prompts
 app/static/             web UI (vendored marked + DOMPurify, works offline)
-data/                   settings.json, memories/, projects/, chats/ (created at runtime)
+data/                   settings.json, memories/, projects/, chats/ (created at runtime; the folder version's
+                        data folder. The standalone exe asks where to keep them on first start)
 tests/                  pytest suite (mocked API and computer)
 ```
 
@@ -156,8 +160,8 @@ The project is a git repository. `main` holds released states, tagged `v0.1.0`, 
 
 ## Notes and limits
 
-- Logs from the windowed app go to `data/app.log`.
-- Chats are saved in `data/chats/` with their full transcript, including screenshots the agent took, so they can be resumed. Deleting a chat in the sidebar removes its file. Deleting a project keeps its chats as random chats.
+- Logs from the windowed app go to `app.log` (in `data\` for the folder version, `%LOCALAPPDATA%\PolyglotAgent` for the standalone exe).
+- Chats are saved in `chats\` in the data folder with their full transcript, including screenshots the agent took, so they can be resumed. Deleting a chat in the sidebar removes its file. Deleting a project keeps its chats; they move to the **Chats** list.
 - The cost shown in the header is an estimate based on list prices.
 - Unicode typing works in normal Windows apps. A few games and remote-desktop windows ignore Unicode input. For those, ask the agent to put the text on the clipboard with PowerShell (`Set-Clipboard`) and paste it with ctrl+v.
 - Web search results include source links under the reply.
