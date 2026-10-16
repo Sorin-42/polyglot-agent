@@ -263,9 +263,55 @@ def _intersect(a: tuple[int, int, int, int], b: tuple[int, int, int, int]):
     return (l, t, r, btm) if r > l and btm > t else None
 
 
+def open_mss():
+    """Screen capture handle. mss 10.2 renamed mss.mss() to mss.MSS() and will drop the
+    old name; requirements allow older versions that only have mss.mss()."""
+    import mss
+    return (getattr(mss, "MSS", None) or mss.mss)()
+
+
+# ------------------------------------------------------------------ displays
+def primary_index(mons: list[dict]) -> int:
+    """mss index of the main display: Windows puts it at (0, 0) of the virtual screen.
+    mss lists displays in enumeration order, which needn't start with the main one."""
+    for i, m in enumerate(mons[1:], start=1):
+        if m["left"] == 0 and m["top"] == 0:
+            return i
+    return 1
+
+
+def describe_displays(mons: list[dict]) -> list[dict]:
+    """mss monitors (index 0 = all of them) -> what the Settings dropdown shows: size in
+    physical pixels and where each display sits relative to the main one."""
+    if len(mons) < 2:
+        return []
+    p = mons[primary_index(mons)]
+    out = []
+    for i, m in enumerate(mons[1:], start=1):
+        cx, cy = m["left"] + m["width"] / 2, m["top"] + m["height"] / 2
+        if m is p:
+            pos = "primary"
+        elif cx < p["left"]:
+            pos = "left"
+        elif cx >= p["left"] + p["width"]:
+            pos = "right"
+        else:
+            pos = "above" if cy < p["top"] else "below"
+        out.append({"index": i, "width": m["width"], "height": m["height"], "position": pos})
+    return out
+
+
+def list_displays() -> list[dict]:
+    try:
+        with open_mss() as sct:
+            return describe_displays(sct.monitors)
+    except Exception:  # noqa: BLE001 - no display / capture unavailable
+        return []
+
+
 # --------------------------------------------------------------------------- #
 class LocalComputer:
-    def __init__(self, monitor: int = 1, max_edge: int = 1568, settle: float = 0.35,
+    def __init__(self, monitor: int = 0, max_edge: int = 1568, settle: float = 0.35,
                  stop_event: Optional[threading.Event] = None, capture_mode: str = "window",
                  own_title: str = ""):
         self.monitor = monitor
@@ -290,10 +336,9 @@ class LocalComputer:
         return self._pg
 
     def _monitor_rect(self) -> tuple[int, int, int, int]:
-        import mss
-        with mss.mss() as sct:
+        with open_mss() as sct:
             mons = sct.monitors
-            idx = self.monitor if 0 < self.monitor < len(mons) else 1
+            idx = self.monitor if 0 < self.monitor < len(mons) else primary_index(mons)
             m = mons[idx]
         return m["left"], m["top"], m["left"] + m["width"], m["top"] + m["height"]
 
@@ -352,10 +397,9 @@ class LocalComputer:
 
     # ---------------- capture ----------------
     def _grab(self, region: tuple[int, int, int, int]) -> Image.Image:
-        import mss
         x0, y0, x1, y1 = region
         box = {"left": x0, "top": y0, "width": max(1, x1 - x0), "height": max(1, y1 - y0)}
-        with mss.mss() as sct:
+        with open_mss() as sct:
             shot = sct.grab(box)
         return Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
 

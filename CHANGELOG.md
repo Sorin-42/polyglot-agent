@@ -2,6 +2,34 @@
 
 All notable changes to Polyglot Agent. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] - 2026-10-15
+
+### Added
+- **Choose your data folder.** On first start the standalone exe asks where to keep your memory, chats,
+  projects and settings (including the API key), before the language picker. It suggests
+  `%LOCALAPPDATA%\PolyglotAgent`; **Browse…** opens the Windows folder picker. A folder that already holds
+  other files gets a `Polyglot Agent` folder inside it, and a folder that already holds this app's data is
+  used as it is. If the chosen folder goes missing later (e.g. an unplugged drive), the app asks again.
+- **Settings → Data folder** shows the folder, opens it in Explorer, and can change it: the current data is
+  copied to the new folder (the old one is kept), or a folder that already has data is used as it is.
+- **Folder picker instead of typed paths.** Project folders are added with **Add folder…**, and the
+  "Allow reading files here?" card has **Change…** to pick a wider folder. Both open the native Windows
+  folder dialog. A folder that doesn't contain the file is refused with a note.
+
+### Changed
+- **Computer control is off by default.** Turn it on in Settings → Tools (it applies to the next new
+  chat). Settings saved by an earlier version keep the value they had.
+- "Random chats" in the sidebar is now **Chats** (对话 in Chinese).
+- **Display to control** replaces the Monitor number box: a list of the connected displays with their
+  size and position (main display, on the left, on the right, above, below). It is hidden when only one
+  display is connected. New settings default to the main display, found by its position rather than
+  assumed to be first in Windows' list; a display that's been unplugged also falls back to it.
+- Screen capture uses `mss.MSS()` where available; `mss.mss()` is deprecated in mss 10.2 and will be
+  removed.
+- This PC's app state (log, single-instance lock, window cache, and the note of where the data folder is)
+  stays in `%LOCALAPPDATA%\PolyglotAgent` for the standalone exe, separate from your data. The folder
+  version keeps everything in `data\` as before.
+
 ## [0.6.0] - 2026-10-14
 
 ### Added

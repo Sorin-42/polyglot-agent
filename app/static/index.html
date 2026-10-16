@@ -42,7 +42,7 @@
     </div>
     <div class="side-section" data-i18n="projects">Projects</div>
     <div id="projectList"></div>
-    <div class="side-section" data-i18n="randomChats">Random chats</div>
+    <div class="side-section" data-i18n="chatsSection">Chats</div>
     <ul id="randomList" class="chat-list"></ul>
   </aside>
 
@@ -124,7 +124,7 @@
         <textarea name="instructions" rows="5" data-i18n-placeholder="instructionsHint" placeholder="e.g. 4-layer board, JLCPCB rules, KiCad 9. Answer with metric units."></textarea></label>
       <div class="field"><span data-i18n="readableFolders">Folders the agent may read without asking</span>
         <ul id="folderList" class="folder-list"></ul>
-        <div class="row"><input id="folderAdd" class="mono" placeholder="C:\Users\you\Documents\project"><button type="button" id="folderAddBtn" class="ghost" data-i18n="add">Add</button></div>
+        <div class="row"><button type="button" id="folderBrowse" data-i18n="addFolder">Add folder…</button></div>
       </div>
       <small class="muted" data-i18n="projectNote">Instructions and folders apply to new chats in this project.</small>
     </div>
@@ -162,12 +162,20 @@
         <label><span data-i18n="set_capture_mode">Screenshots</span> <select name="capture_mode"></select><small class="muted" data-i18n="set_capture_note">Active app = the focused window only · Full screen = the whole screen. The taskbar is never included.</small></label>
         <label class="check"><input type="checkbox" name="confirm_computer_actions"> <span data-i18n="set_confirm_actions">Ask before every mouse/keyboard action</span></label>
         <small class="muted" data-i18n="set_esc_note">While Claude controls the computer, a border and Claude's pointer are shown. Press Esc on your keyboard at any time to stop it.</small>
-        <label><span data-i18n="set_monitor">Monitor</span> <input type="number" name="monitor" min="1" max="8"></label>
+        <label id="monitorRow"><span data-i18n="set_monitor">Display to control</span> <select name="monitor"></select></label>
         <label><span data-i18n="set_screenshot_edge">Screenshot long edge (px)</span> <input type="number" name="max_screenshot_edge" min="640" max="2000"></label>
         <label><span data-i18n="set_shell_mode">PowerShell commands</span> <select name="shell_mode"></select></label>
         <label><span data-i18n="set_file_mode">File edits</span> <select name="file_tools_mode"></select><small class="muted" data-i18n="set_file_note">Reading files asks once per folder.</small></label>
         <label class="check"><input type="checkbox" name="web_search"> <span data-i18n="set_web_search">Web search</span></label>
         <small class="muted" data-i18n="toolsNote">Tool changes apply to the next new chat.</small>
+      </fieldset>
+      <fieldset><legend data-i18n="dataLegend">Data folder</legend>
+        <div id="dataDirText" class="data-path mono"></div>
+        <div class="row">
+          <button type="button" id="dataOpenBtn" class="ghost" data-i18n="dataOpen">Open</button>
+          <button type="button" id="dataChangeBtn" class="ghost" data-i18n="change">Change…</button>
+        </div>
+        <small class="muted" data-i18n="dataSettingsNote">Memory, chats, projects and settings are stored here.</small>
       </fieldset>
       <fieldset><legend data-i18n="windowLegend">Window</legend>
         <label><span data-i18n="windowMode">Open the app in</span> <select name="window_mode"></select>
@@ -189,6 +197,25 @@
     </div>
     <div class="modal-foot"><button type="button" id="btnQuit" class="danger ghost" data-i18n="quitApp" hidden>Quit app</button><span id="setStatus" class="muted small"></span><button type="submit" class="primary" data-i18n="save">Save</button></div>
   </form>
+</div>
+
+<!-- Data folder: chosen on first start (standalone app), or changed from Settings -->
+<div id="dataModal" class="modal" hidden>
+  <div class="modal-card data-card" role="dialog" aria-labelledby="dataTitle">
+    <div class="modal-head"><strong id="dataTitle" data-i18n="dataTitle">Where should Polyglot Agent keep your data?</strong></div>
+    <div class="modal-body">
+      <p id="dataLangs" class="muted small">选择数据文件夹 · データの保存先 · 데이터 폴더 · Carpeta de datos · Dossier des données · Datenordner</p>
+      <p class="small" data-i18n="dataBody">Your memory, chats, projects and settings (including your API key) are saved in this folder.</p>
+      <div id="dataPath" class="data-path mono"></div>
+      <p id="dataNote" class="muted small"></p>
+    </div>
+    <div class="modal-foot">
+      <button type="button" id="dataCancel" class="ghost" data-i18n="cancel" hidden>Cancel</button>
+      <span class="spacer"></span>
+      <button type="button" id="dataBrowse" data-i18n="browse">Browse…</button>
+      <button type="button" id="dataUse" class="primary" data-i18n="useFolder">Use this folder</button>
+    </div>
+  </div>
 </div>
 
 <!-- Language picker: shown until the user chooses; the app never detects the language -->

@@ -144,6 +144,7 @@ fieldset { border: 1px solid var(--border); border-radius: 10px; margin: 10px 0;
 legend { font-size: 13px; font-weight: 600; color: var(--muted); padding: 0 4px; }
 fieldset label { display: flex; flex-direction: column; gap: 3px; font-size: 13px; margin: 8px 0; }
 fieldset label.check { flex-direction: row; align-items: center; gap: 8px; }
+fieldset label[hidden] { display: none; }
 .viewer { position: fixed; inset: 0; background: rgba(0,0,0,.8); display: flex; align-items: center; justify-content: center; z-index: 40; cursor: zoom-out; }
 .viewer img { max-width: 96vw; max-height: 96vh; }
 .drawer-head strong, .drawer-head button { white-space: nowrap; flex-shrink: 0; }
@@ -214,12 +215,17 @@ fieldset label.check { flex-direction: row; align-items: center; gap: 8px; }
 
 /* ---------- folder approval ---------- */
 .approval .folder-row { display: flex; gap: 6px; align-items: center; margin: 6px 0 8px; font-size: 13px; }
-.approval .folder-row input { flex: 1; font-family: var(--mono); font-size: 12px; }
+.approval .folder-row .folder-path { flex: 1; min-width: 0; font-size: 12px; overflow-wrap: anywhere; }
+.approval .folder-warn { color: var(--warn); }
 .approval .row { flex-wrap: wrap; }
 .composer-bar[hidden] { display: none; }
 
 /* ---------- language picker ---------- */
 .lang-card { width: min(560px, 100%); }
+.data-card { width: min(600px, 100%); }
+.data-path { background: var(--panel-2); border-radius: 8px; padding: 8px 10px; font-size: 13px; overflow-wrap: anywhere; min-height: 1.4em; }
+.data-card .data-path { margin: 10px 0 4px; }
+fieldset .data-path { margin: 6px 0; }
 .lang-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin: 10px 0; }
 .lang-grid button { padding: 10px 8px; font-size: 15px; }
 .lang-grid button:hover { border-color: var(--accent); }

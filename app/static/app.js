@@ -39,7 +39,7 @@ const STR = {
     memTidied: "Memory tidied", memCleared: "Memory cleared", memRestored: "Memory restored",
     memCleanNote: "New chats use this memory; chats already started keep the memory they began with.",
     memBusy: "Wait until the current request and memory update have finished, then try again.",
-    newProject: "New project", projects: "Projects", randomChats: "Random chats", project: "Project",
+    newProject: "New project", projects: "Projects", chatsSection: "Chats", project: "Project",
     projectName: "Name", projectInstructions: "Instructions for the agent (optional)",
     instructionsHint: "e.g. 4-layer board, JLCPCB rules, KiCad 9. Answer with metric units.",
     readableFolders: "Folders the agent may read without asking", add: "Add",
@@ -72,13 +72,29 @@ const STR = {
     set_capture_note: "Active app = the focused window only · Full screen = the whole screen. The taskbar is never included.",
     set_confirm_actions: "Ask before every mouse/keyboard action",
     set_esc_note: "While Claude controls the computer, a border and Claude's pointer are shown. Press Esc on your keyboard at any time to stop it.",
-    set_monitor: "Monitor", set_screenshot_edge: "Screenshot long edge (px)", set_shell_mode: "PowerShell commands",
+    set_monitor: "Display to control", disp_primary: "main display", disp_left: "on the left",
+    disp_right: "on the right", disp_above: "above", disp_below: "below", set_screenshot_edge: "Screenshot long edge (px)", set_shell_mode: "PowerShell commands",
     set_file_mode: "File edits", set_file_note: "Reading files asks once per folder.", set_web_search: "Web search",
     set_memory_enabled: "Persistent memory", set_memory_pass: "Review & update memory after each request",
     set_memory_model: "Memory reviewer model", set_context: "Context",
     set_auto_compact: "Auto compact long chats", set_compact_trigger: "Compact when the context reaches (tokens)",
     set_compact_note: "Older messages are summarized so the chat can keep going. The summary replaces them for the agent; you still see the whole chat.",
     set_clear_trigger: "Clear old tool results after (input tokens)", set_keep_tools: "Keep most recent tool results",
+    // folders and the data folder
+    browse: "Browse…", change: "Change…", cancel: "Cancel", addFolder: "Add folder…",
+    pickReadTitle: "Choose a folder the agent may read",
+    pickAllowTitle: "Choose the folder to allow (it must contain the file)",
+    folderNotContaining: "That folder doesn't contain this file; pick it or a folder above it.",
+    dataTitle: "Where should Polyglot Agent keep your data?",
+    dataBody: "Your memory, chats, projects and settings (including your API key) are saved in this folder.",
+    pickDataTitle: "Choose a folder for Polyglot Agent's data", useFolder: "Use this folder",
+    dataExisting: "This folder already has Polyglot Agent data. The app will use it.",
+    dataNew: "Your data will be saved here.",
+    dataCopy: "Your current data will be copied here. The old folder is kept; you can delete it yourself.",
+    dataCurrent: "This is the folder in use now.",
+    dataMissing: "The data folder used last time wasn't found:",
+    dataLegend: "Data folder", dataOpen: "Open",
+    dataSettingsNote: "Memory, chats, projects and settings are stored here.",
   },
   zh: {
     language: "语言", memory: "记忆", newChat: "新对话", settings: "设置", screen: "屏幕", chats: "对话列表",
@@ -108,7 +124,7 @@ const STR = {
     memTidied: "记忆已整理", memCleared: "记忆已清除", memRestored: "记忆已恢复",
     memCleanNote: "新对话会使用这份记忆；已开始的对话仍保留开始时的记忆。",
     memBusy: "请等当前请求和记忆更新完成后再试。",
-    newProject: "新项目", projects: "项目", randomChats: "随手聊", project: "项目",
+    newProject: "新项目", projects: "项目", chatsSection: "对话", project: "项目",
     projectName: "名称", projectInstructions: "给智能体的说明（可选）",
     instructionsHint: "例如：四层板、嘉立创工艺、KiCad 9，回答使用公制单位。",
     readableFolders: "智能体无需询问即可读取的文件夹", add: "添加",
@@ -141,7 +157,8 @@ const STR = {
     set_capture_note: "仅当前应用 = 只截取当前聚焦的窗口 · 全屏 = 整个屏幕。任务栏永远不会被截取。",
     set_confirm_actions: "每次鼠标/键盘操作前都先询问",
     set_esc_note: "Claude 控制电脑时，屏幕四周会显示边框和 Claude 的指针。随时按键盘上的 Esc 即可让它停止。",
-    set_monitor: "显示器", set_screenshot_edge: "截图长边（像素）", set_shell_mode: "PowerShell 命令",
+    set_monitor: "要控制的显示器", disp_primary: "主显示器", disp_left: "左侧",
+    disp_right: "右侧", disp_above: "上方", disp_below: "下方", set_screenshot_edge: "截图长边（像素）", set_shell_mode: "PowerShell 命令",
     set_file_mode: "文件修改", set_file_note: "读取文件时，每个文件夹只询问一次。", set_web_search: "网络搜索",
     set_memory_enabled: "长期记忆", set_memory_pass: "每次请求后检查并更新记忆",
     set_memory_model: "记忆整理模型", set_context: "上下文",
@@ -150,6 +167,20 @@ const STR = {
     set_clear_trigger: "输入超过多少 token 后清除旧的工具结果", set_keep_tools: "保留最近几次工具结果",
     effort_low: "低", effort_medium: "中", effort_high: "高", effort_xhigh: "超高", effort_max: "最高",
     mode_ask: "先询问", mode_auto: "自动", mode_off: "关闭",
+    browse: "浏览…", change: "更改…", cancel: "取消", addFolder: "添加文件夹…",
+    pickReadTitle: "选择智能体可以读取的文件夹",
+    pickAllowTitle: "选择要允许的文件夹（必须包含这个文件）",
+    folderNotContaining: "这个文件夹不包含该文件，请选择它所在的文件夹或其上级文件夹。",
+    dataTitle: "Polyglot Agent 的数据保存在哪里？",
+    dataBody: "你的记忆、对话、项目和设置（包括 API 密钥）都会保存在这个文件夹里。",
+    pickDataTitle: "选择 Polyglot Agent 的数据文件夹", useFolder: "使用这个文件夹",
+    dataExisting: "这个文件夹里已有 Polyglot Agent 的数据，应用会直接使用它。",
+    dataNew: "你的数据将保存在这里。",
+    dataCopy: "当前的数据会复制到这里。原文件夹会保留，你可以自行删除。",
+    dataCurrent: "这就是当前正在使用的文件夹。",
+    dataMissing: "找不到上次使用的数据文件夹：",
+    dataLegend: "数据文件夹", dataOpen: "打开",
+    dataSettingsNote: "记忆、对话、项目和设置都保存在这里。",
   },
 };
 // The UI follows the language the user chose; nothing is detected from the browser or OS.
@@ -199,6 +230,18 @@ function twoClick(btn, label, action) {
   btn._armed = true; btn.classList.add("armed");
   const old = btn.textContent; btn.textContent = t("confirmDelete");
   setTimeout(() => { if (btn._armed) { btn._armed = false; btn.textContent = old; btn.classList.remove("armed"); } }, 3000);
+}
+
+// Native folder dialog, opened by the server (a web page can't see real paths). null = cancelled.
+async function pickFolder(title, initial) {
+  try { return (await api("POST", "/api/pick-folder", { title, initial: initial || "" })).path || null; }
+  catch (err) { alertNotice(err.message); return null; }
+}
+// Is `path` inside `folder`? Windows paths: case-insensitive, either slash.
+function pathWithin(path, folder) {
+  const norm = (p) => String(p).replace(/\//g, "\\").replace(/\\+$/, "").toLowerCase();
+  const f = norm(folder), p = norm(path);
+  return !!f && (p === f || p.startsWith(f + "\\"));
 }
 
 const messagesEl = $("messages");
@@ -447,14 +490,24 @@ function renderApproval(d) {
     row.replaceChildren(el("span", "muted small", t("approved")));
   };
   if (d.kind === "folder") {
+    // The suggested folder can be widened (e.g. to the project root) with the folder picker.
+    let folder = d.folder || "";
     const fr = el("div", "folder-row");
-    const inp = el("input"); inp.value = d.folder || "";
-    fr.append(el("span", "", t("folder") + ":"), inp);
-    card.appendChild(fr);
+    const shown = el("span", "mono folder-path", folder);
+    const change = el("button", "ghost", t("change")); change.type = "button";
+    const warn = el("div", "small folder-warn");
+    change.onclick = async () => {
+      const p = await pickFolder(t("pickAllowTitle"), folder);
+      if (!p) return;
+      if (!pathWithin(d.detail || "", p)) { warn.textContent = t("folderNotContaining"); return; }
+      folder = p; shown.textContent = p; warn.textContent = "";
+    };
+    fr.append(el("span", "", t("folder") + ":"), shown, change);
+    card.append(fr, warn);
     const all = el("button", "primary", t("allowFolder")); all.type = "button";
     const once = el("button", "", t("allowOnce")); once.type = "button";
     const no = el("button", "", t("deny")); no.type = "button";
-    all.onclick = () => answer({ approve: true, scope: "folder", folder: inp.value.trim() });
+    all.onclick = () => answer({ approve: true, scope: "folder", folder });
     once.onclick = () => answer({ approve: true, scope: "once" });
     no.onclick = () => answer({ approve: false });
     row.append(all, once, no);
@@ -638,7 +691,6 @@ function openProjectModal(p) {
   pform.elements.name.value = p ? p.name : "";
   pform.elements.instructions.value = p ? p.instructions || "" : "";
   editFolders = p ? [...(p.folders || [])] : [];
-  $("folderAdd").value = "";
   $("projDelete").hidden = !p;
   $("projDelete").textContent = t("deleteProject");
   $("projectTitle").textContent = p ? p.name : t("newProject");
@@ -646,12 +698,11 @@ function openProjectModal(p) {
   $("projectModal").hidden = false;
   pform.elements.name.focus();
 }
-$("folderAddBtn").onclick = () => {
-  const v = $("folderAdd").value.trim();
-  if (v && !editFolders.includes(v)) editFolders.push(v);
-  $("folderAdd").value = ""; renderFolderList();
+$("folderBrowse").onclick = async () => {
+  const p = await pickFolder(t("pickReadTitle"), editFolders[editFolders.length - 1] || "");
+  if (p && !editFolders.includes(p)) editFolders.push(p);
+  renderFolderList();
 };
-$("folderAdd").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("folderAddBtn").click(); } });
 $("projClose").onclick = () => ($("projectModal").hidden = true);
 pform.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -707,8 +758,13 @@ function handle(ev) {
   const it = items.get(ev.id);
   switch (ev.type) {
     case "hello":
-      settings = ev.settings; meta = ev.meta; chatMeta = ev.chat || chatMeta;
-      applyI18n(); fillLang(); fillSettingsForm(); renderShareSwitch();
+      settings = ev.settings; meta = ev.meta;
+      applyI18n();
+      if (ev.setup) { openDataModal("setup", ev.setup); break; }   // first start: choose a data folder
+      if (dataMode === "setup") $("dataModal").hidden = true;
+      dataMode = null;
+      chatMeta = ev.chat || chatMeta;
+      fillLang(); fillSettingsForm(); renderShareSwitch();
       loadHistory(ev.history);
       (ev.pending_approvals || []).forEach(renderApproval);
       setSidebarData(ev); setUsage(ev);
@@ -898,6 +954,18 @@ function labelOptions(name, text) {
   [...(form.elements[name] || { options: [] }).options].forEach((o) => (o.textContent = text(o.value)));
 }
 const optText = (prefix) => (v) => (STR[uiLang()] || {})[prefix + v] || STR.en[prefix + v] || v;
+// Connected displays: size and where each sits relative to the main one. With one display
+// there is nothing to choose, so the row is hidden.
+function fillDisplays() {
+  const displays = meta.displays || [];
+  const sel = form.elements.monitor;
+  sel.replaceChildren();
+  displays.forEach((d) => {
+    const o = el("option", "", `${d.index}. ${d.width} × ${d.height} · ${t("disp_" + d.position)}`);
+    o.value = d.index; sel.appendChild(o);
+  });
+  $("monitorRow").hidden = displays.length <= 1;
+}
 function fillSettingsForm() {
   fillSelect("effort", meta.efforts || []); fillSelect("translator_effort", meta.efforts || []);
   fillSelect("shell_mode", meta.approval_modes || []); fillSelect("file_tools_mode", meta.approval_modes || []);
@@ -907,15 +975,27 @@ function fillSettingsForm() {
   ["shell_mode", "file_tools_mode"].forEach((n) => labelOptions(n, optText("mode_")));
   labelOptions("capture_mode", (v) => t(v === "screen" ? "shareScreen" : "shareWindow"));
   labelOptions("window_mode", (v) => t("win_" + v));
+  fillDisplays();
   const dl = $("modelList"); dl.replaceChildren(); (meta.models || []).forEach((m) => { const o = el("option"); o.value = m; dl.appendChild(o); });
   for (const [k, v] of Object.entries(settings)) {
     const f = form.elements[k]; if (!f || k === "api_key") continue;
     if (f.type === "checkbox") f.checked = !!v; else f.value = v;
   }
+  // 0 (or a display that's gone) means the main display
+  const displays = meta.displays || [];
+  if (!displays.some((d) => d.index === settings.monitor)) {
+    const main = displays.find((d) => d.position === "primary") || displays[0];
+    form.elements.monitor.value = main ? main.index : "";
+  }
   form.elements.api_key.value = "";
   $("keyHint").textContent = settings.api_key_set ? `✓ ${settings.api_key_hint || t("keySet")}` : t("keyNotSet");
+  $("dataDirText").textContent = meta.data_dir || "";
+  $("dataChangeBtn").hidden = !!meta.data_dir_fixed;   // fixed by POLYGLOT_DATA_DIR
 }
-$("btnSettings").onclick = () => { fillSettingsForm(); $("btnQuit").hidden = !meta.desktop; $("settingsModal").hidden = false; };
+$("btnSettings").onclick = async () => {
+  try { meta = (await api("GET", "/api/settings")).meta; } catch { /* keep what we have */ }   // displays may have changed
+  fillSettingsForm(); $("btnQuit").hidden = !meta.desktop; $("settingsModal").hidden = false;
+};
 $("btnQuit").onclick = () => twoClick($("btnQuit"), t("quitApp"), async () => {
   try { await api("POST", "/api/quit"); } catch { /* server is going away */ }
   $("settingsModal").hidden = true;
@@ -938,6 +1018,46 @@ form.addEventListener("submit", async (e) => {
     setTimeout(() => { $("setStatus").textContent = ""; $("settingsModal").hidden = true; }, 600);
   } catch (err) { $("setStatus").textContent = err.message; }
 });
+
+/* ----------------------------------------------------------- data folder */
+// "setup": first start, nothing works until a folder is chosen. "change": from Settings.
+let dataMode = null, dataPicked = "";
+async function showDataTarget(path) {
+  const j = await api("POST", "/api/data-dir/preview", { path });
+  dataPicked = path;
+  $("dataPath").textContent = j.target;
+  $("dataNote").textContent = j.current ? t("dataCurrent") : j.existing ? t("dataExisting")
+    : dataMode === "change" ? t("dataCopy") : t("dataNew");
+}
+function openDataModal(mode, setup) {
+  dataMode = mode;
+  $("dataCancel").hidden = mode === "setup";
+  $("dataLangs").hidden = mode !== "setup" || !!settings.language;
+  $("langModal").hidden = true;
+  input.disabled = mode === "setup" || !settings.language;
+  $("dataModal").hidden = false;
+  const start = mode === "setup" ? setup.suggested : meta.data_dir;
+  showDataTarget(start).then(() => {
+    if (setup && setup.missing) $("dataNote").textContent = `${t("dataMissing")} ${setup.missing}`;
+  }).catch((err) => ($("dataNote").textContent = err.message));
+}
+$("dataBrowse").onclick = async () => {
+  const p = await pickFolder(t("pickDataTitle"), dataPicked);
+  if (p) showDataTarget(p).catch((err) => ($("dataNote").textContent = err.message));
+};
+$("dataUse").onclick = async () => {
+  const btn = $("dataUse");
+  btn.disabled = true;
+  try {
+    await api("POST", "/api/data-dir", { path: dataPicked });
+    $("dataModal").hidden = true;    // the server sends a fresh "hello" for the new folder
+    dataMode = null;
+  } catch (err) { $("dataNote").textContent = err.message; }
+  finally { btn.disabled = false; }
+};
+$("dataCancel").onclick = () => { $("dataModal").hidden = true; dataMode = null; renderLangGate(); };
+$("dataChangeBtn").onclick = () => { $("settingsModal").hidden = true; openDataModal("change"); };
+$("dataOpenBtn").onclick = () => api("POST", "/api/data-dir/open").catch((err) => alertNotice(err.message));
 
 /* ---------------------------------------------------------------- memory */
 let memCurrent = "";
@@ -1058,6 +1178,7 @@ $("memUndo").onclick = () => memClean($("memUndo"), "/api/memory/undo", t("undoC
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     ["viewer", "settingsModal", "memoryDrawer", "projectModal", "usagePop"].forEach((id) => ($(id).hidden = true));
+    if (dataMode === "change") $("dataCancel").click();
   }
 });
 
