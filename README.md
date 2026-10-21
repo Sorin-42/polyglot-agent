@@ -55,6 +55,8 @@ Translation happens only at the edges. The agent's transcript is append-only, an
 
 ## Quick start (Windows)
 
+On a Mac, see [Mac](#mac). On Linux, see the [Python pack](#linux-or-any-computer-with-python-python-pack).
+
 1. Unzip the folder anywhere, for example `Documents\polyglot-agent`.
 2. Double-click **`PolyglotAgent.exe`**.
    - **First launch only:** a console window installs the app's components into a private `.venv` folder, which takes about a minute. This needs Python 3.10 or newer, and the exe finds it automatically (python.org install, `py` launcher, PATH, or Anaconda/Miniconda). If none is found, it offers to open the Python download page.
@@ -78,7 +80,42 @@ powershell -ExecutionPolicy Bypass -File tools\build_exe.ps1
 
 The result is `dist\PolyglotAgent.exe`, a single file you can copy to any Windows 10/11 PC: Python is inside it, and the window uses the WebView2 engine that Windows already has, so nothing else needs installing. On first start the standalone exe asks where to keep your data (memory, chats, projects and settings, including your API key): **Browse…** opens the Windows folder picker, or keep the suggested `%LOCALAPPDATA%\PolyglotAgent`. If you pick a folder that already holds other files, the data goes in a `Polyglot Agent` folder inside it; if it already holds Polyglot Agent data (for example from another PC), that data is used. Settings → *Data folder* shows where it is, opens it in Explorer, and can move it later: the current data is copied to the new folder and the old one is kept. If the folder goes missing (say, an unplugged drive), the app asks again. Only this PC's app state stays in `%LOCALAPPDATA%\PolyglotAgent` either way: the log, the single-instance lock, the window's browser cache, and a note of where the data folder is. The script builds with Python 3.13 (or 3.12/3.14) via the `py` launcher. You can also push this folder to GitHub and run the included **build-exe** Actions workflow, which builds the exe on a Windows runner.
 
-### For developers
+## Mac
+
+**Polyglot Agent for Mac** is a normal Mac app: no Python, no Terminal.
+
+1. Download the `.dmg` for your Mac from the project's [Releases](https://github.com/Sorin-42/polyglot-agent/releases) page: `…-mac-apple-silicon.dmg` for M1/M2/M3/M4 Macs, `…-mac-intel.dmg` for older Intel Macs (Apple menu > About This Mac shows which).
+2. Open it and drag **Polyglot Agent** onto **Applications**.
+3. Double-click it in Applications. It opens in its own window.
+
+The first time, macOS warns that it can't check the app, because it isn't registered with Apple. Allow it once (the `.dmg` includes these steps as *Open me first*):
+- **macOS 15 or newer:** click *Done*, open **System Settings → Privacy & Security**, scroll to the message about Polyglot Agent and click **Open Anyway**, then enter your password.
+- **macOS 14 or older:** Control-click the app in Applications, choose **Open**, then **Open** again.
+
+After that it opens with a normal double-click. On first start it asks where to keep your data (suggesting `~/Library/Application Support/PolyglotAgent`); everything else works as on Windows, except computer control (see below).
+
+The Mac app is built on Apple's own machines by the **build-exe** GitHub workflow (`PolyglotAgent-mac.spec`, `tools/build_mac.sh`), for Apple Silicon and Intel, and each build is started and quit once as a check. Pushing a version tag (`v*`) publishes a release with the `.dmg` files, the Windows exe and the Python pack. On a Mac you can also build it yourself with `sh tools/build_mac.sh`. Getting rid of the first-open warning needs an Apple Developer ID to sign and notarize the app.
+
+## Linux, or any computer with Python (Python pack)
+
+`PolyglotAgent-<version>-python.zip` runs on any computer with **Python 3.10 or newer**. Build it on any system with `python tools/build_pack.py`; the **build-exe** workflow builds and tests it on Ubuntu and macOS too.
+
+1. Unzip it anywhere.
+2. Start it:
+   - **Linux:** run `./start.sh`. On Ubuntu/Debian, if setup reports missing venv support: `sudo apt install python3-venv`.
+   - **macOS:** double-click `start.command` (the Mac app above is easier).
+   - **Windows with Python:** `start.bat` (or just use `PolyglotAgent.exe`).
+3. The first run installs the app's components into a private `.venv` folder (about a minute). After that it starts straight away. Your data is kept in `data/` inside the folder.
+
+On Linux the app opens in a Chrome, Edge or Chromium app window if one is installed, otherwise in a tab of your default browser; on macOS it gets its own window. The terminal window stays open while the app runs; closing it (or Ctrl+C) quits the app, as does *Quit app* in Settings.
+
+### macOS and Linux differences
+
+Everything works the same as on Windows except **computer control** (screenshots, mouse, keyboard), which uses Windows APIs and is greyed out in Settings. Commands run in **bash** through a `shell` tool instead of PowerShell, with the same approval prompts. Choosing a folder uses the Mac's own folder window; on Linux it uses zenity or kdialog when installed, then Tk, and otherwise asks you to type the path.
+
+Tested by hand on Ubuntu 22.04 (Python 3.10). The Mac app and the pack on macOS are checked by the GitHub workflow (start, answer, quit) but haven't been tried by hand on a Mac yet.
+
+## For developers
 
 ```bat
 python -m venv .venv
@@ -130,7 +167,13 @@ PolyglotAgent.exe       windowed launcher (first run sets up .venv, then starts 
 launcher/               launcher source (C, built with MinGW: launcher/build.sh) and app icon
 tools/make_icons.py     renders the app icon at every size (pixel-sharp small sizes)
 tools/set_exe_icon.py   puts a new icon into an existing exe without recompiling
-tools/bootstrap.py      first-run setup used by the launcher
+start.py                start on any OS with Python 3.10+ (sets up .venv on first run)
+start.command, start.sh, start.bat   double-click / terminal wrappers for start.py
+tools/bootstrap.py      first-run setup used by the launcher and start.py
+tools/build_pack.py     builds the macOS/Linux/any-Python zip (dist/PolyglotAgent-<version>-python.zip)
+tools/build_mac.sh      builds the Mac app and .dmg on a Mac (PolyglotAgent-mac.spec, PyInstaller)
+tools/mac/              the "Open me first" guide that goes in the .dmg
+tools/smoke_test.py     starts a build, checks it answers, quits it (used by the GitHub workflow)
 tools/build_exe.ps1     builds the standalone single-file exe (PolyglotAgent.spec, PyInstaller)
 app/desktop.py          desktop entry: single instance, own app window, quits when closed
 app/main.py             developer entry (browser tab, console logs)
@@ -143,8 +186,8 @@ app/translator.py       Haiku translator + paragraph-streaming reply translation
 app/computer.py         Windows controller (mss screenshots, pyautogui, SendInput Unicode typing/wheel)
 app/keys.py             xdotool-style key names → Windows keys
 app/memory_store.py     /memories backend with path-traversal protection
-app/local_tools.py      PowerShell + text editor tools
-app/folder_picker.py    native Windows folder picker (the page can't see real paths)
+app/local_tools.py      shell (PowerShell on Windows, bash elsewhere) + text editor tools
+app/folder_picker.py    native folder picker: Windows dialog, macOS osascript, Linux zenity/kdialog/Tk
 app/prompts.py          agent / translator / memory-review prompts
 app/static/             web UI (vendored marked + DOMPurify, works offline)
 data/                   settings.json, memories/, projects/, chats/ (created at runtime; the folder version's

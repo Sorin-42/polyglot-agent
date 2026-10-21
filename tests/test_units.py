@@ -462,3 +462,77 @@ def test_monitor_setting_falls_back_to_the_main_display(monkeypatch):
     for setting, rect in ((0, (0, 0, 2560, 1440)), (7, (0, 0, 2560, 1440)), (1, (2560, 0, 4480, 1080))):
         c.monitor = setting
         assert c._monitor_rect() == rect
+
+
+# ------------------------------------------------------------ macOS / Linux
+def test_folder_dialog_commands_on_mac_and_linux(monkeypatch):
+    from app import folder_picker as fp
+    monkeypatch.setattr(fp.sys, "platform", "darwin")
+    argv = fp.posix_command('Pick "this"', '/Users/me/My "Docs"')
+    assert argv == ["osascript", "-e", 'POSIX path of (choose folder with prompt "Pick \\"this\\"" '
+                                       'default location (POSIX file "/Users/me/My \\"Docs\\""))']
+    monkeypatch.setattr(fp.sys, "platform", "linux")
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    with pytest.raises(fp.PickerUnavailable):           # no graphical session: the UI asks for a path
+        fp.posix_command("t", None)
+    monkeypatch.setenv("DISPLAY", ":0")
+    tools = {"zenity", "kdialog"}
+    monkeypatch.setattr(fp.shutil, "which", lambda n: f"/usr/bin/{n}" if n in tools else None)
+    assert fp.posix_command("t", "/home/me") == ["zenity", "--file-selection", "--directory", "--title=t",
+                                                 "--filename=/home/me/"]
+    tools.discard("zenity")
+    assert fp.posix_command("t", "/home/me") == ["kdialog", "--getexistingdirectory", "/home/me", "--title", "t"]
+    tools.clear()
+    assert fp.posix_command("t", None) is None          # Tk is next
+
+
+def test_mac_and_linux_get_a_shell_and_no_computer_control(monkeypatch):
+    from app import config, local_tools
+    from app.prompts import agent_system_prompt
+    monkeypatch.setattr(local_tools.sys, "platform", "linux")
+    assert local_tools.shell_tool()["name"] == "shell"
+    assert local_tools._shell_argv("echo hi")[1:] == ["-c", "echo hi"]
+    p = agent_system_prompt(app_title="X", system="Mac", shell_name="shell", computer_on=False, shell_on=True,
+                            editor_on=True, web_on=False, memory_on=False, memory_snapshot="")
+    assert "the user's Mac." in p and "`shell`" in p and "powershell" not in p.lower()
+    monkeypatch.setattr(local_tools.sys, "platform", "win32")
+    assert local_tools.shell_tool()["name"] == "powershell"
+    w = agent_system_prompt(app_title="X", computer_on=False, shell_on=True, editor_on=False, web_on=False,
+                            memory_on=False, memory_snapshot="")
+    assert "the user's Windows PC." in w and "`powershell`" in w                # Windows text unchanged
+
+    import app.agent as agent_mod
+    monkeypatch.setattr(config, "COMPUTER_SUPPORTED", False)
+    sess = agent_mod.Session(lambda: s, lambda ev: asyncio.sleep(0))
+    s = Settings(language="English", computer_use=True, web_search=False, memory_enabled=False)
+    sess._ensure_conversation_setup(s)
+    names = [t.get("name") or t.get("type") for t in sess.chat["tools"]]
+    assert "computer_toolset_20260801" not in names and "windows" not in names
+    asyncio.run(sess.http.aclose())
+
+
+def test_python_pack(tmp_path):
+    import importlib.util
+    import zipfile
+    spec = importlib.util.spec_from_file_location("build_pack", "tools/build_pack.py")
+    bp = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bp)
+    out = bp.build(tmp_path)
+    ver = bp.version()
+    assert out.name == f"PolyglotAgent-{ver}-python.zip"
+    with zipfile.ZipFile(out) as z:
+        names = z.namelist()
+        top = f"PolyglotAgent-{ver}/"
+        assert all(n.startswith(top) for n in names)
+        for need in ("start.py", "start.sh", "start.command", "start.bat", "requirements.txt",
+                     "tools/bootstrap.py", "app/server.py", "app/static/index.html", "app/folder_picker.py"):
+            assert top + need in names, need
+        assert not any("__pycache__" in n or n.endswith(".pyc") for n in names)
+        for script in ("start.py", "start.sh", "start.command"):
+            info = z.getinfo(top + script)
+            assert (info.external_attr >> 16) & 0o777 == 0o755             # stays executable when unzipped
+            data = z.read(info)
+            assert data.startswith(b"#!") and b"\r\n" not in data          # a CRLF shebang won't run
+        req = z.read(top + "requirements.txt").decode()
+        assert 'pywebview>=6.0; sys_platform == "win32"' in req           # Windows-only parts skipped elsewhere

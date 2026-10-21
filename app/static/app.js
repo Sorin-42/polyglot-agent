@@ -95,6 +95,11 @@ const STR = {
     dataMissing: "The data folder used last time wasn't found:",
     dataLegend: "Data folder", dataOpen: "Open",
     dataSettingsNote: "Memory, chats, projects and settings are stored here.",
+    // macOS / Linux
+    computerWindowsOnly: "Computer control is available on Windows only.",
+    set_shell_mode_posix: "Shell commands", approveTitle_shell_posix: "Run this command?",
+    win_app_posix: "App window (Chrome, Edge or Chromium; otherwise a browser tab)",
+    typeFolderPath: "Type the full path of the folder:",
   },
   zh: {
     language: "语言", memory: "记忆", newChat: "新对话", settings: "设置", screen: "屏幕", chats: "对话列表",
@@ -181,6 +186,10 @@ const STR = {
     dataMissing: "找不到上次使用的数据文件夹：",
     dataLegend: "数据文件夹", dataOpen: "打开",
     dataSettingsNote: "记忆、对话、项目和设置都保存在这里。",
+    computerWindowsOnly: "电脑控制目前仅支持 Windows。",
+    set_shell_mode_posix: "Shell 命令", approveTitle_shell_posix: "运行这条命令？",
+    win_app_posix: "应用窗口（Chrome、Edge 或 Chromium；都没有时用浏览器标签页）",
+    typeFolderPath: "输入文件夹的完整路径：",
   },
 };
 // The UI follows the language the user chose; nothing is detected from the browser or OS.
@@ -235,13 +244,21 @@ function twoClick(btn, label, action) {
 // Native folder dialog, opened by the server (a web page can't see real paths). null = cancelled.
 async function pickFolder(title, initial) {
   try { return (await api("POST", "/api/pick-folder", { title, initial: initial || "" })).path || null; }
-  catch (err) { alertNotice(err.message); return null; }
+  catch (err) {
+    // No folder window on this system (e.g. Linux without zenity/kdialog/Tk): type the path.
+    if (err.status === 501) return (window.prompt(`${title}\n${t("typeFolderPath")}`, initial || "") || "").trim() || null;
+    alertNotice(err.message); return null;
+  }
 }
-// Is `path` inside `folder`? Windows paths: case-insensitive, either slash.
+const isWindows = () => (meta.platform || "win32") === "win32";
+// Is `path` inside `folder`? Windows paths: case-insensitive, either slash. Elsewhere: exact, "/".
 function pathWithin(path, folder) {
-  const norm = (p) => String(p).replace(/\//g, "\\").replace(/\\+$/, "").toLowerCase();
+  if (!String(folder || "").trim()) return false;
+  const norm = isWindows() ? (p) => String(p).replace(/\//g, "\\").replace(/\\+$/, "").toLowerCase()
+    : (p) => String(p).replace(/\/+$/, "");
+  const sep = isWindows() ? "\\" : "/";
   const f = norm(folder), p = norm(path);
-  return !!f && (p === f || p.startsWith(f + "\\"));
+  return f === "" ? p.startsWith(sep) : p === f || p.startsWith(f + sep);
 }
 
 const messagesEl = $("messages");
@@ -481,7 +498,7 @@ function renderTurnUsage(d) {
 }
 function renderApproval(d) {
   const card = el("div", "approval");
-  card.appendChild(el("strong", "", t("approveTitle_" + d.kind)));
+  card.appendChild(el("strong", "", t("approveTitle_" + d.kind + (d.kind === "shell" && !isWindows() ? "_posix" : ""))));
   if (d.detail) card.appendChild(el("pre", "", d.detail));
   const row = el("div", "row");
   const answer = (payload) => {
@@ -932,7 +949,7 @@ function renderShareSwitch() {
   const sw = $("shareSwitch");
   sw.title = t("shareHint");
   sw.querySelectorAll("button").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.mode === mode)));
-  sw.parentElement.hidden = settings.computer_use === false;
+  sw.parentElement.hidden = settings.computer_use === false || meta.computer_supported === false;
 }
 $("shareSwitch").querySelectorAll("button").forEach((b) => {
   b.onclick = async () => {
@@ -974,7 +991,14 @@ function fillSettingsForm() {
   ["effort", "translator_effort"].forEach((n) => labelOptions(n, optText("effort_")));
   ["shell_mode", "file_tools_mode"].forEach((n) => labelOptions(n, optText("mode_")));
   labelOptions("capture_mode", (v) => t(v === "screen" ? "shareScreen" : "shareWindow"));
-  labelOptions("window_mode", (v) => t("win_" + v));
+  labelOptions("window_mode", (v) => t("win_" + v + (v === "app" && !isWindows() ? "_posix" : "")));
+  // macOS/Linux: no computer control (Windows APIs), and the shell is bash rather than PowerShell
+  const pc = meta.computer_supported !== false;
+  form.elements.computer_use.disabled = !pc;
+  $("computerNote").hidden = pc;
+  form.querySelectorAll(".computer-only").forEach((e) => (e.hidden = !pc));
+  $("shellLabel").dataset.i18n = isWindows() ? "set_shell_mode" : "set_shell_mode_posix";
+  $("shellLabel").textContent = t($("shellLabel").dataset.i18n);
   fillDisplays();
   const dl = $("modelList"); dl.replaceChildren(); (meta.models || []).forEach((m) => { const o = el("option"); o.value = m; dl.appendChild(o); });
   for (const [k, v] of Object.entries(settings)) {
@@ -1007,7 +1031,7 @@ form.addEventListener("submit", async (e) => {
   e.preventDefault();
   const upd = {};
   [...form.elements].forEach((f) => {
-    if (!f.name) return;
+    if (!f.name || f.disabled) return;      // e.g. computer control on macOS/Linux: keep the saved value
     if (f.type === "checkbox") upd[f.name] = f.checked;
     else if (f.type === "number") upd[f.name] = Number(f.value);
     else if (f.name !== "api_key" || f.value.trim()) upd[f.name] = f.value.trim();

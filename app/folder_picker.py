@@ -1,13 +1,19 @@
-"""Native Windows "Select folder" dialog (IFileOpenDialog with FOS_PICKFOLDERS).
+"""Native "choose a folder" dialog.
 
 The UI is a web page, which can't learn real folder paths, so the server opens the
-dialog for it. Called from a worker thread; the dialog is modal to the window in
-front (the app window, since the user just clicked Browse) so it opens on top.
+dialog for it, from a worker thread.
+- Windows: IFileOpenDialog with FOS_PICKFOLDERS, modal to the window in front (the
+  app window, since the user just clicked Browse) so it opens on top.
+- macOS: AppleScript's "choose folder" (osascript ships with every Mac).
+- Linux: zenity or kdialog when installed, else Tk. With none of them (or no
+  graphical session) PickerUnavailable is raised and the UI asks for a typed path.
 """
 from __future__ import annotations
 
 import ctypes
 import os
+import shutil
+import subprocess
 import sys
 import uuid
 from typing import Optional
@@ -68,8 +74,69 @@ if IS_WINDOWS:
 
 def pick_folder(title: str = "", initial: Optional[str] = None) -> Optional[str]:
     """Show the dialog and return the chosen folder, or None if the user cancelled."""
-    if not IS_WINDOWS:
-        raise PickerUnavailable("Folder browsing is only available on Windows.")
+    start = _existing(initial)
+    if IS_WINDOWS:
+        return _pick_windows(title, start)
+    argv = posix_command(title, start)
+    if argv is None:
+        return _pick_tk(title, start)
+    try:
+        proc = subprocess.run(argv, capture_output=True, text=True, timeout=3600)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise OSError(f"{argv[0]}: {e}") from None
+    out = proc.stdout.strip()
+    if proc.returncode != 0 or not out:
+        if proc.returncode == 1 or "-128" in proc.stderr:     # cancelled (osascript: error -128)
+            return None
+        raise OSError(f"{argv[0]} failed: {proc.stderr.strip()[:300]}")
+    return out.rstrip("/") or "/"
+
+
+def _existing(path: Optional[str]) -> Optional[str]:
+    """The nearest folder that exists at or above `path`, to open the dialog in."""
+    while path and not os.path.isdir(path):
+        parent = os.path.dirname(path.rstrip("\\/"))
+        path = parent if parent and parent != path else None
+    return path
+
+
+def _applescript_text(s: str) -> str:
+    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def posix_command(title: str, start: Optional[str]) -> Optional[list[str]]:
+    """The dialog command on macOS/Linux, or None when only Tk is left."""
+    title = title or "Choose a folder"
+    if sys.platform == "darwin":
+        where = f" default location (POSIX file {_applescript_text(start)})" if start else ""
+        return ["osascript", "-e", f"POSIX path of (choose folder with prompt {_applescript_text(title)}{where})"]
+    if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+        raise PickerUnavailable("There is no graphical session to show a folder window in.")
+    if shutil.which("zenity"):
+        return (["zenity", "--file-selection", "--directory", f"--title={title}"]
+                + ([f"--filename={start.rstrip('/')}/"] if start else []))
+    if shutil.which("kdialog"):
+        return ["kdialog", "--getexistingdirectory", start or os.path.expanduser("~"), "--title", title]
+    return None
+
+
+def _pick_tk(title: str, start: Optional[str]) -> Optional[str]:
+    try:
+        import tkinter
+        from tkinter import filedialog
+        root = tkinter.Tk()
+    except Exception as e:  # noqa: BLE001 - tkinter not installed, or no display
+        raise PickerUnavailable(f"No folder window is available ({e}).") from None
+    try:
+        root.withdraw()
+        root.attributes("-topmost", True)
+        return filedialog.askdirectory(parent=root, title=title, initialdir=start or None,
+                                       mustexist=True) or None
+    finally:
+        root.destroy()
+
+
+def _pick_windows(title: str, start: Optional[str]) -> Optional[str]:
     co = _ole32.CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE)
     dlg, item = ctypes.c_void_p(), ctypes.c_void_p()
     try:
@@ -83,10 +150,6 @@ def pick_folder(title: str = "", initial: Optional[str] = None) -> Optional[str]
                      argtypes=(wintypes.DWORD,)), "SetOptions")
         if title:
             _call(dlg, _SET_TITLE, title, argtypes=(wintypes.LPCWSTR,))
-        start = initial
-        while start and not os.path.isdir(start):      # open at the nearest folder that exists
-            parent = os.path.dirname(start.rstrip("\\/"))
-            start = parent if parent and parent != start else None
         if start:
             folder = ctypes.c_void_p()
             if _shell32.SHCreateItemFromParsingName(start, None, ctypes.byref(IID_IShellItem),

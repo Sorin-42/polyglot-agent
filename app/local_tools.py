@@ -1,4 +1,5 @@
-"""PowerShell and text-editor tools that run on the user's PC (approval-gated)."""
+"""Shell (PowerShell on Windows, bash elsewhere) and text-editor tools that run on the
+user's computer (approval-gated)."""
 from __future__ import annotations
 
 import os
@@ -34,6 +35,35 @@ POWERSHELL_TOOL = {
         "required": ["command"],
     },
 }
+
+# macOS and Linux get a bash tool instead. Same input and handling; only the name and
+# description differ, so the agent isn't told to write PowerShell on a Mac.
+SHELL_TOOL = {
+    "name": "shell",
+    "description": (
+        "Run a shell command (bash, or sh if bash is missing) on the user's computer and get "
+        "stdout/stderr back. Use it for inspecting files and folders, running scripts, builds, "
+        "tests, git, pip/conda, and reading logs. "
+        "Each call is a fresh process; pass `cwd` to choose the working directory. "
+        "Avoid interactive commands (they will hang until the timeout). "
+        "The user may be asked to approve each command, so keep commands focused and explain "
+        "destructive ones first."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "command": {"type": "string", "description": "Shell command or script to run."},
+            "cwd": {"type": "string", "description": "Working directory (absolute path). Optional."},
+            "timeout_sec": {"type": "integer", "description": "Timeout in seconds (default 120, max 1800)."},
+        },
+        "required": ["command"],
+    },
+}
+SHELL_TOOL_NAMES = ("powershell", "shell")
+
+
+def shell_tool() -> dict:
+    return POWERSHELL_TOOL if sys.platform == "win32" else SHELL_TOOL
 
 
 WINDOWS_TOOL = {
@@ -90,17 +120,19 @@ def _shell_argv(command: str) -> list[str]:
         prefix = ("[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; "
                   "$OutputEncoding=[System.Text.Encoding]::UTF8; $ProgressPreference='SilentlyContinue'; ")
         return [exe, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", prefix + command]
-    exe = shutil.which("pwsh")
-    if exe:
-        return [exe, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command]
-    return ["/bin/sh", "-c", command]  # dev fallback on non-Windows
+    return [shutil.which("bash") or "/bin/sh", "-c", command]
 
 
 def _kill_tree(proc: subprocess.Popen) -> None:
-    """Kill PowerShell and everything it started (children can hold our pipes)."""
+    """Kill the shell and everything it started (children can hold our pipes)."""
     if sys.platform == "win32":
         subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True,
                        creationflags=0x08000000)
+    else:  # the shell leads its own process group (start_new_session)
+        try:
+            os.killpg(proc.pid, 9)
+        except OSError:
+            pass
     try:
         proc.kill()
     except OSError:
@@ -123,9 +155,9 @@ def run_powershell(inp: dict, stop_event: threading.Event) -> tuple[str, bool]:
     try:
         proc = subprocess.Popen(_shell_argv(command), cwd=cwd, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
-                                creationflags=flags)
+                                creationflags=flags, start_new_session=sys.platform != "win32")
     except OSError as e:
-        return f"Error: could not start PowerShell: {e}", True
+        return f"Error: could not start the shell: {e}", True
 
     chunks: dict[str, list[bytes]] = {"out": [], "err": []}
 

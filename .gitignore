@@ -1,6 +1,7 @@
 data/
 .venv/
 .build-venv/
+.build-venv-mac/
 build/
 dist/
 __pycache__/

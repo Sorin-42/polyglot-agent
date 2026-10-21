@@ -13,13 +13,27 @@ from typing import Optional
 APP_NAME = "Polyglot Agent"
 ROOT = Path(__file__).resolve().parent.parent
 FROZEN = bool(getattr(sys, "frozen", False))   # single-file exe built with PyInstaller
+IS_WINDOWS = sys.platform == "win32"
+IS_MAC = sys.platform == "darwin"
+# Computer control and its on-screen signal use Windows APIs; elsewhere they are unavailable.
+COMPUTER_SUPPORTED = IS_WINDOWS
+
+
+def system_name() -> str:
+    return "Windows PC" if IS_WINDOWS else "Mac" if IS_MAC else "Linux computer"
 
 
 def _default_state_dir() -> Path:
-    if FROZEN:  # the standalone exe can live anywhere; keep its state in the user profile
+    if not FROZEN:      # run from the app folder: everything stays in its data/
+        return ROOT / "data"
+    # the standalone exe / Mac app can live anywhere; keep its state in the user profile
+    if IS_WINDOWS:
         base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
-        return Path(base) / "PolyglotAgent"
-    return ROOT / "data"
+    elif IS_MAC:
+        base = str(Path.home() / "Library" / "Application Support")
+    else:
+        base = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
+    return Path(base) / "PolyglotAgent"
 
 
 _ENV_DIR = os.environ.get("POLYGLOT_DATA_DIR")

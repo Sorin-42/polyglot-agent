@@ -1,13 +1,19 @@
-# Builds the standalone PolyglotAgent.exe on a Windows runner.
-# Push this folder to a GitHub repo, then: Actions -> build-exe -> Run workflow,
-# and download the "PolyglotAgent" artifact.
+# Builds every download and checks that each one starts:
+#   windows  PolyglotAgent.exe and the any-OS Python pack (PolyglotAgent-<version>-python.zip)
+#   mac      "Polyglot Agent.app" in a .dmg, for Apple Silicon and for Intel Macs
+#   pack     the Python pack, started with start.sh / start.command on Ubuntu and macOS
+#   release  on a version tag (v*): a GitHub release with all of the above attached
+# Runs on version tags, on pushes to feat/... and fix/... branches, and by hand
+# (Actions -> build-exe -> Run workflow).
 name: build-exe
 on:
   workflow_dispatch:
   push:
     tags: ["v*"]
+    branches: ["feat/**", "fix/**"]
+
 jobs:
-  build:
+  windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,7 +24,86 @@ jobs:
       - run: python -m pytest -q
         continue-on-error: true
       - run: python -m PyInstaller --noconfirm --clean PolyglotAgent.spec
+      - name: Smoke test (first start, own window, quit)
+        run: python tools/smoke_test.py "$env:LOCALAPPDATA/PolyglotAgent" -- dist/PolyglotAgent.exe
+      - run: python tools/build_pack.py
       - uses: actions/upload-artifact@v4
         with:
           name: PolyglotAgent
           path: dist/PolyglotAgent.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PolyglotAgent-python
+          path: dist/PolyglotAgent-*-python.zip
+
+  mac:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15           # Apple Silicon
+            kind: apple-silicon
+          - runner: macos-15-intel     # Intel
+            kind: intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sh tools/build_mac.sh
+      - name: Smoke test (first start, own window, quit)
+        run: python tools/smoke_test.py "$HOME/Library/Application Support/PolyglotAgent" -- "dist/Polyglot Agent.app/Contents/MacOS/Polyglot Agent"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PolyglotAgent-mac-${{ matrix.kind }}
+          path: dist/PolyglotAgent-*-mac-*.dmg
+
+  pack:
+    needs: windows
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            start: start.sh
+          - os: macos-15
+            start: start.command
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: PolyglotAgent-python
+          path: pack
+      - name: Unzip like a user would
+        run: cd "$RUNNER_TEMP" && unzip -q "$GITHUB_WORKSPACE"/pack/PolyglotAgent-*-python.zip && ls -l PolyglotAgent-*/start.*
+      - name: Smoke test (first-run setup, start, quit)
+        run: |
+          DIR=$(ls -d "$RUNNER_TEMP"/PolyglotAgent-*)
+          python tools/smoke_test.py "$DIR/data" -- sh "$DIR/${{ matrix.start }}"
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, mac, pack]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: downloads
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: downloads/*
+          body: |
+            **Which file do I need?**
+            - **Mac:** `PolyglotAgent-…-mac-apple-silicon.dmg` (M1/M2/M3/M4 Macs) or `…-mac-intel.dmg` (older Intel Macs; Apple menu > About This Mac shows which). Open it, drag Polyglot Agent to Applications, and read "Open me first" for the one-time approval.
+            - **Windows:** `PolyglotAgent.exe`. Double-click it; no installation needed.
+            - **Linux, or any computer with Python 3.10+:** `PolyglotAgent-…-python.zip`. Unzip it and run `./start.sh`.
+
+            Changes are listed in [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md).

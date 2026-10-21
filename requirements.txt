@@ -2,7 +2,9 @@ fastapi>=0.110
 uvicorn>=0.29
 websockets>=12
 httpx>=0.27
-mss>=9.0
-pyautogui>=0.9.54
 pillow>=10.0
-pywebview>=6.0
+# Computer control (screen capture, mouse, keyboard) is Windows-only.
+mss>=9.0; sys_platform == "win32"
+pyautogui>=0.9.54; sys_platform == "win32"
+# The app's own window: WebView2 on Windows, WebKit on macOS (Linux uses a browser window).
+pywebview>=6.0; sys_platform == "win32" or sys_platform == "darwin"

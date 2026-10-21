@@ -8,6 +8,8 @@ import json
 import os
 import re
 import secrets
+import subprocess
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -98,7 +100,9 @@ def _session() -> Session:
 def _meta() -> dict:
     return {"models": config.MODELS, "efforts": config.EFFORTS, "languages": config.LANGUAGES,
             "approval_modes": config.APPROVAL_MODES, "capture_modes": config.CAPTURE_MODES,
-            "window_modes": config.WINDOW_MODES,
+            # WebView2/Edge/Chrome choices are Windows-only; elsewhere "app" is a Chrome/Edge/Chromium window
+            "window_modes": config.WINDOW_MODES if config.IS_WINDOWS else ["app", "browser"],
+            "platform": sys.platform, "computer_supported": config.COMPUTER_SUPPORTED,
             "app_name": config.APP_NAME, "data_dir": str(config.DATA_DIR or ""),
             "data_dir_fixed": config.DATA_DIR_FIXED, "desktop": state.shutdown is not None,
             "displays": list_displays()}      # read each time: screens can be plugged in or out
@@ -362,11 +366,17 @@ async def data_dir_set(request: Request):
 
 @app.post("/api/data-dir/open")
 async def data_dir_open(request: Request):
-    """Show the data folder in Explorer."""
+    """Show the data folder in Explorer / Finder / the file manager."""
     _check(request)
-    if config.DATA_DIR is None or not hasattr(os, "startfile"):
+    if config.DATA_DIR is None:
         raise HTTPException(400, "Nothing to open.")
-    os.startfile(config.DATA_DIR)  # noqa: S606 - our own folder
+    try:
+        if hasattr(os, "startfile"):
+            os.startfile(config.DATA_DIR)  # noqa: S606 - our own folder
+        else:
+            subprocess.Popen(["open" if config.IS_MAC else "xdg-open", str(config.DATA_DIR)])
+    except OSError as e:
+        raise HTTPException(500, f"Couldn't open the folder: {e}") from None
     return {"ok": True}
 
 

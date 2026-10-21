@@ -7,6 +7,7 @@ from typing import Optional
 
 
 def agent_system_prompt(*, app_title: str, computer_on: bool, shell_on: bool, editor_on: bool,
+                        system: str = "Windows PC", shell_name: str = "powershell",
                         web_on: bool, memory_on: bool, memory_snapshot: str,
                         project: Optional[dict] = None, folders: Optional[list[str]] = None) -> str:
     """Built once per chat and then frozen, so the cached prefix never changes.
@@ -18,7 +19,7 @@ def agent_system_prompt(*, app_title: str, computer_on: bool, shell_on: bool, ed
     if computer_on:
         tools.append("- Computer control: screenshots, mouse and keyboard, plus `windows` to list/focus windows.")
     if shell_on:
-        tools.append("- `powershell`: run commands (the user may need to approve each one).")
+        tools.append(f"- `{shell_name}`: run commands (the user may need to approve each one).")
     if editor_on:
         tools.append("- `str_replace_based_edit_tool`: view/edit files by absolute path. The first read in a "
                      "new folder asks the user once; after that the folder is readable without asking.")
@@ -28,7 +29,7 @@ def agent_system_prompt(*, app_title: str, computer_on: bool, shell_on: bool, ed
         tools.append("- `memory`: your persistent long-term memory (/memories).")
     tool_text = "\n".join(tools) or "- (none; answer from knowledge)"
 
-    parts = [f"""You are a capable personal assistant on the user's Windows PC. Chat started {today}.
+    parts = [f"""You are a capable personal assistant on the user's {system}. Chat started {today}.
 You help with anything: electronics and PCB design, embedded and general software development and debugging, lab and data work, writing, and everyday questions.
 
 <tools>

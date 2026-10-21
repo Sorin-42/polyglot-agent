@@ -26,8 +26,9 @@ from . import config
 from .api import APIError, stream_message
 from .computer import ComputerError, LocalComputer, UserAbort, compute_scale, thumbnail_b64
 from .config import Settings
-from .local_tools import (EDITOR_NAME, EDITOR_WRITE_COMMANDS, POWERSHELL_TOOL, WINDOWS_TOOL,
-                          describe_editor_write, folder_for, is_within, run_editor, run_powershell)
+from .local_tools import (EDITOR_NAME, EDITOR_WRITE_COMMANDS, SHELL_TOOL_NAMES, WINDOWS_TOOL,
+                          describe_editor_write, folder_for, is_within, run_editor, run_powershell,
+                          shell_tool)
 from .memory_store import MemoryError_, MemoryStore
 from .overlay import ControlOverlay, control_label
 from .prompts import COMPACT_INSTRUCTIONS, MEMORY_PASS_SYSTEM, MEMORY_TIDY_SYSTEM, agent_system_prompt, slug
@@ -307,7 +308,7 @@ class Session:
         chat = self.chat
         if chat["system_prompt"] is not None:
             return
-        computer_on = s.computer_use
+        computer_on = s.computer_use and config.COMPUTER_SUPPORTED
         if computer_on:
             try:
                 self._get_computer()
@@ -319,7 +320,7 @@ class Session:
             tools.append({"type": "computer_toolset_20260801"})
             tools.append(copy.deepcopy(WINDOWS_TOOL))
         if s.shell_mode != "off":
-            tools.append(copy.deepcopy(POWERSHELL_TOOL))
+            tools.append(copy.deepcopy(shell_tool()))
         if s.file_tools_mode != "off":
             tools.append({"type": "text_editor_20250728", "name": EDITOR_NAME, "max_characters": 30000})
         if s.web_search:
@@ -329,7 +330,8 @@ class Session:
         chat["tools"] = tools
         chat["show_thinking"] = s.show_thinking
         chat["system_prompt"] = agent_system_prompt(
-            app_title=config.APP_NAME, computer_on=computer_on,
+            app_title=config.APP_NAME, system=config.system_name(), shell_name=shell_tool()["name"],
+            computer_on=computer_on,
             shell_on=s.shell_mode != "off", editor_on=s.file_tools_mode != "off",
             web_on=s.web_search, memory_on=s.memory_enabled,
             memory_snapshot=self.memory.snapshot() if s.memory_enabled else "",
@@ -661,7 +663,7 @@ class Session:
                     content, err = await self._windows(tu["id"], inp)
                 elif name == "memory":
                     content, err = await self._memory_op(inp, source="agent")
-                elif name == "powershell":
+                elif name in SHELL_TOOL_NAMES:
                     content, err = await self._powershell(tu["id"], inp)
                 elif name == EDITOR_NAME:
                     content, err = await self._editor(tu["id"], inp)
@@ -799,10 +801,10 @@ class Session:
 
     async def _powershell(self, aid: str, inp: dict) -> tuple[str, bool]:
         s = self.get_settings()
-        item = await self._action_event(aid, "shell", "powershell", inp)
+        item = await self._action_event(aid, "shell", shell_tool()["name"], inp)
         if s.shell_mode == "off":
             await self._action_done(item, False, "disabled")
-            return "Error: the PowerShell tool is disabled in settings.", True
+            return "Error: running commands is disabled in settings.", True
         if s.shell_mode == "ask":
             detail = str(inp.get("command", ""))
             if inp.get("cwd"):

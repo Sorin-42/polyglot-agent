@@ -1,7 +1,10 @@
 # Normalize text files to LF in the repository; Git picks the local line ending on checkout.
 * text=auto
-# Shell scripts must keep LF even on Windows checkouts.
+# Shell scripts must keep LF even on Windows checkouts (they run on macOS/Linux).
 *.sh text eol=lf
+*.command text eol=lf
+start.py text eol=lf
+*.bat text eol=crlf
 # Binaries: never diff or convert.
 *.exe binary
 *.ico binary

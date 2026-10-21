@@ -2,6 +2,39 @@
 
 All notable changes to Polyglot Agent. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.8.0] - 2026-10-20
+
+### Added
+- **Mac app.** "Polyglot Agent.app" in a `.dmg` (drag to Applications), for Apple Silicon and Intel Macs:
+  no Python or Terminal needed, and it opens in its own window (WebKit, through pywebview). The `.dmg`
+  includes an "Open me first" guide for the one-time approval macOS asks for, since the app isn't
+  registered with Apple. Data defaults to `~/Library/Application Support/PolyglotAgent` (asked on first start).
+  Built with `PolyglotAgent-mac.spec` / `tools/build_mac.sh` on GitHub's Mac machines.
+- **GitHub workflow builds and checks every download.** On `feat/`/`fix/` pushes and version tags it builds
+  the Windows exe, the Mac apps and the Python pack, then starts each one, checks it answers and quits it
+  (`tools/smoke_test.py`); the pack is started on Ubuntu and macOS. A version tag publishes a GitHub release
+  with all files and a "which file do I need" note.
+- **Python pack (Linux, or any computer with Python).** `python tools/build_pack.py` builds `dist/PolyglotAgent-<version>-python.zip`,
+  which runs on any computer with Python 3.10+: `start.command` (macOS, double-click), `./start.sh` (Linux)
+  or `start.bat` (Windows). `start.py` sets up a private `.venv` on the first run and reinstalls only when
+  `requirements.txt` changes; data stays in `data/` inside the folder.
+- On macOS and Linux the agent runs commands with bash through a `shell` tool (same approval prompts),
+  and its prompt names the right system. Stopping a command ends everything it started.
+- Folder picker on macOS (the system's "choose folder" window) and Linux (zenity, kdialog, then Tk). Without
+  any of them, the app asks for the path instead.
+- On macOS the app opens in its own window (pywebview is now installed there too); on Linux in a Chrome,
+  Edge or Chromium app window when one is installed, otherwise a browser tab. A file lock keeps it to one
+  copy at a time; Settings → Data folder → Open uses Finder or
+  the file manager.
+
+### Changed
+- Computer control is Windows-only and greyed out elsewhere; the screen settings are hidden there.
+- `mss` and `pyautogui` are installed on Windows only, `pywebview` on Windows and macOS.
+- First-run setup can put pip into an environment created without it (e.g. Ubuntu without `python3-venv`),
+  using the system's pip, and explains what to install when that isn't possible.
+- Settings no longer saves fields that are greyed out, so a data folder shared between a Mac and a Windows
+  PC keeps the Windows computer-control setting.
+
 ## [0.7.0] - 2026-10-15
 
 ### Added

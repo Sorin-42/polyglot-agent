@@ -1,4 +1,4 @@
-"""Desktop entry point used by PolyglotAgent.exe.
+"""Desktop entry point used by PolyglotAgent.exe and the start scripts (start.py & co).
 
 - no console window (run with pythonw / as a windowed exe); logs go to app.log in
   config.STATE_DIR (this PC's app state, next to the lock file and window cache)
@@ -12,12 +12,16 @@
   browser a tab in the default browser (e.g. Firefox); quits after the tab has
           been closed for a while.
   Closing the app window quits the app.
+- macOS: "app" is the app's own window (WebKit, via pywebview). Linux: "app" opens
+  a Chrome, Edge or Chromium app window when one is installed, otherwise a browser
+  tab. On both the single-instance lock is a file lock.
 """
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -68,7 +72,16 @@ def free_port(preferred: int = 8765) -> int:
 def _first_instance() -> bool:
     global _mutex_handle
     if sys.platform != "win32":
-        return True
+        # macOS/Linux: an exclusive lock on a file, held for as long as the process runs
+        import fcntl
+        config.STATE_DIR.mkdir(parents=True, exist_ok=True)
+        _mutex_handle = open(config.STATE_DIR / "instance.lock", "a+")
+        try:
+            fcntl.flock(_mutex_handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True
+        except OSError:
+            _mutex_handle.close()
+            return False
     import ctypes
     k32 = ctypes.windll.kernel32
     k32.CreateMutexW.restype = ctypes.c_void_p
@@ -90,11 +103,11 @@ def _server_alive() -> bool:
 def _wait_for_previous_exit(timeout: float = FORCE_EXIT_SECONDS + 5) -> bool:
     """The other instance holds the lock but its server is gone, so it is still
     shutting down. Wait for it to release the lock; True once we are first."""
-    import ctypes
-    k32 = ctypes.windll.kernel32
     deadline = time.time() + timeout
     while time.time() < deadline:
-        k32.CloseHandle(ctypes.c_void_p(_mutex_handle))
+        if sys.platform == "win32":
+            import ctypes
+            ctypes.windll.kernel32.CloseHandle(ctypes.c_void_p(_mutex_handle))
         time.sleep(0.5)
         if _first_instance():
             return True
@@ -152,10 +165,33 @@ _BROWSERS = {  # name -> (exe, path under Program Files / LocalAppData)
 }
 
 
+_POSIX_BROWSERS = {  # name -> macOS app bundles / Linux commands
+    "edge": (["Microsoft Edge.app/Contents/MacOS/Microsoft Edge"],
+             ["microsoft-edge", "microsoft-edge-stable"]),
+    "chrome": (["Google Chrome.app/Contents/MacOS/Google Chrome", "Chromium.app/Contents/MacOS/Chromium"],
+               ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"]),
+}
+
+
+def _find_posix_browser(prefer: str) -> Optional[str]:
+    for name in [prefer] + [b for b in _POSIX_BROWSERS if b != prefer]:
+        apps, commands = _POSIX_BROWSERS.get(name, ([], []))
+        if sys.platform == "darwin":
+            for base in ("/Applications", os.path.expanduser("~/Applications")):
+                for rel in apps:
+                    if os.path.isfile(os.path.join(base, rel)):
+                        return os.path.join(base, rel)
+        else:
+            for cmd in commands:
+                if shutil.which(cmd):
+                    return shutil.which(cmd)
+    return None
+
+
 def find_app_browser(prefer: str = "edge") -> Optional[str]:
-    """Edge or Chrome for a chromeless app window; `prefer` is tried first."""
+    """Edge or Chrome (or Chromium) for a chromeless app window; `prefer` is tried first."""
     if sys.platform != "win32":
-        return None
+        return _find_posix_browser(prefer)
     for name in [prefer] + [b for b in _BROWSERS if b != prefer]:
         if name not in _BROWSERS:
             continue
@@ -181,8 +217,8 @@ def _open_app_window(url: str, prefer: str = "edge") -> Optional[subprocess.Pope
     if not exe:
         return None
     # one private profile per browser: Edge and Chrome profiles are not interchangeable
-    profile = config.STATE_DIR / ("window-profile-chrome" if exe.lower().endswith("chrome.exe")
-                                 else "window-profile")
+    name = os.path.basename(exe).lower()
+    profile = config.STATE_DIR / ("window-profile-chrome" if "chrom" in name else "window-profile")
     args = [exe, f"--app={url}", f"--user-data-dir={profile}", "--no-first-run",
             "--no-default-browser-check", "--disable-background-mode", "--window-size=1320,880"]
     try:
@@ -225,10 +261,17 @@ def _watch(srv, url: str, mode: str) -> None:
 APP_ICON = Path(__file__).resolve().parent / "static" / "icons" / "app.ico"
 
 
-def webview2_ready() -> bool:
-    """pywebview is installed and will use WebView2. Without the WebView2 runtime,
-    pywebview would silently use the old Internet Explorer engine, which cannot
-    run this UI."""
+def native_window_ready() -> bool:
+    """pywebview can open the app's own window: WebView2 on Windows, WebKit on macOS.
+    Without the WebView2 runtime, pywebview would silently use the old Internet
+    Explorer engine, which cannot run this UI. Linux uses a browser window instead."""
+    if sys.platform == "darwin":
+        try:
+            from webview.platforms import cocoa  # noqa: F401
+            return True
+        except Exception as e:  # noqa: BLE001 - pywebview/pyobjc missing
+            print(f"Built-in window unavailable ({type(e).__name__}: {e}).", flush=True)
+            return False
     if sys.platform != "win32":
         return False
     try:
@@ -243,7 +286,7 @@ def webview2_ready() -> bool:
 
 
 def _app_window(srv, url: str) -> None:
-    """Built-in app window on WebView2; blocks (on the main thread) until it is closed."""
+    """Built-in app window (WebView2 / macOS WebKit); blocks on the main thread until it is closed."""
     import webview
 
     from . import server
@@ -260,8 +303,11 @@ def _app_window(srv, url: str) -> None:
         _request_exit(srv)
         window.destroy()
     server.state.shutdown = quit_app
-    webview.start(gui="edgechromium", private_mode=False, storage_path=str(config.STATE_DIR / "webview"),
-                  icon=str(APP_ICON) if APP_ICON.is_file() else None)
+    if sys.platform == "darwin":   # the .app bundle supplies the Dock icon
+        webview.start(gui="cocoa", private_mode=False, storage_path=str(config.STATE_DIR / "webview"))
+    else:
+        webview.start(gui="edgechromium", private_mode=False, storage_path=str(config.STATE_DIR / "webview"),
+                      icon=str(APP_ICON) if APP_ICON.is_file() else None)
 
 
 def _run_server(srv) -> None:
@@ -302,7 +348,7 @@ def main() -> None:
     mode = "browser" if args.browser else server.state.settings.window_mode
     print(f"{config.APP_NAME} at {url} (window: {mode})", flush=True)
     try:
-        if mode == "app" and webview2_ready():
+        if mode == "app" and native_window_ready():
             # The window needs the main thread, so the server runs beside it.
             server_thread = threading.Thread(target=_run_server, args=(srv,), daemon=True)
             server_thread.start()

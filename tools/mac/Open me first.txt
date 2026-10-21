@@ -1,0 +1,26 @@
+Polyglot Agent for Mac
+
+1. Drag "Polyglot Agent" onto the Applications folder in this window.
+
+2. Open your Applications folder and double-click "Polyglot Agent".
+
+The first time, macOS warns that it can't check the app for malicious software,
+because the app isn't registered with Apple. To open it anyway (only needed once):
+
+  macOS 15 (Sequoia) or newer
+   a. In the warning, click "Done" (not "Move to Trash").
+   b. Open System Settings > Privacy & Security.
+   c. Scroll down to the message about "Polyglot Agent" and click "Open Anyway".
+   d. Enter your Mac password, then click "Open Anyway" once more.
+
+  macOS 14 (Sonoma) or older
+   a. In Applications, hold Control and click "Polyglot Agent", then choose "Open".
+   b. Click "Open" in the message that appears.
+
+After that, it opens with a normal double-click, in its own window.
+
+On first start the app asks where to keep your data (memory, chats, projects and
+settings) and which language you use. Then open Settings (the gear, top right) and
+paste your Anthropic API key from https://platform.claude.com
+
+To quit: close the window, or press Command-Q.
